@@ -700,7 +700,7 @@ class TestDenseRewards:
             reward_config=RewardConfig(invalid_action_penalty=-5.0),
         )
         env.reset(seed=42)
-        _, reward, _, _, _ = env.step("bad")
+        _, reward, _, _, _ = env.step("bad")  # type: ignore[arg-type]
         assert reward == -5.0
 
     def test_elimination_bonus(self):

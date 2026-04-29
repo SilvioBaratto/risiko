@@ -33,6 +33,7 @@ dependencies = [
     "tensorboard>=2.20.0",
     "rich>=15.0.0",
     "typer>=0.15.0",
+    "pyyaml>=6.0",
     "baml-py>=0.80.0",
 ]
 
@@ -111,3 +112,7 @@ convention = "google"
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pyright]
+exclude = ["baml_client"]
+reportPrivateImportUsage = "none"

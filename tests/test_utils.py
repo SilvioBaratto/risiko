@@ -15,7 +15,7 @@ class TestRewardConfig:
     def test_is_frozen_dataclass(self):
         """RewardConfig must be a frozen dataclass."""
         cfg = RewardConfig()
-        assert cfg.__dataclass_params__.frozen
+        assert cfg.__dataclass_params__.frozen  # type: ignore[union-attr]
 
     def test_default_coefficients_present(self):
         """All required coefficients must have sensible defaults."""
@@ -43,7 +43,7 @@ class TestRewardConfig:
         """Frozen dataclass must reject attribute mutation."""
         cfg = RewardConfig()
         try:
-            cfg.sparse_win = 50.0
+            cfg.sparse_win = 50.0  # type: ignore[assignment]
         except Exception as exc:
             assert "frozen" in str(exc).lower() or "cannot" in str(exc).lower()
         else:

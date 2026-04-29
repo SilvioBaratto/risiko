@@ -15,6 +15,7 @@ tensorboard>=2.20.0
 # CLI
 rich>=15.0.0
 typer>=0.15.0
+pyyaml>=6.0
 
 # Dev
 pytest>=9.0.3

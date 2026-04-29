@@ -136,14 +136,14 @@ class RisikoEnv(gym.Env):
         return {
             "territory_owner": s.territory_owner.copy(),
             "armies": s.armies.copy(),
-            "phase": np.int32(s.phase),
-            "current_player": np.int32(s.current_player),
+            "phase": np.array(s.phase, dtype=np.int32),
+            "current_player": np.array(s.current_player, dtype=np.int32),
             "cards": card_matrix,
             "continent_control": continent_control,
-            "trade_count": np.int32(s.trade_count),
-            "reinforcements_remaining": np.int32(s.reinforcements_remaining),
-            "turn_capture": np.int32(s.turn_capture),
-            "n_players": np.int32(s.n_players),
+            "trade_count": np.array(s.trade_count, dtype=np.int32),
+            "reinforcements_remaining": np.array(s.reinforcements_remaining, dtype=np.int32),
+            "turn_capture": np.array(s.turn_capture, dtype=np.int32),
+            "n_players": np.array(s.n_players, dtype=np.int32),
             "eliminated": s.eliminated.copy(),
         }
 
