@@ -1,0 +1,25 @@
+# Multi-agent environment (installs gymnasium as dependency)
+pettingzoo>=1.26.1
+gymnasium>=0.29.0
+
+# PyTorch (2.3.1+ required for NumPy 2.0 compatibility)
+torch>=2.11.0
+numpy>=2.4.4
+
+# Visualization & utilities
+matplotlib>=3.10.9
+pandas>=3.0.2
+tqdm>=4.67.3
+tensorboard>=2.20.0
+
+# CLI
+rich>=15.0.0
+typer>=0.15.0
+
+# Dev
+pytest>=9.0.3
+pytest-cov>=7.1.0
+ruff>=0.15.12
+
+# Viz
+playwright>=1.59.0

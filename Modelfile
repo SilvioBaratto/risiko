@@ -1,0 +1,19 @@
+# Base model - using gemma2:2b for speed and simplicity
+FROM qwen3.5:4b
+
+# Set maximum tokens to generate
+PARAMETER num_predict 2046
+
+# Set temperature for consistency (lower = more consistent, higher = more creative)
+PARAMETER temperature 0.7
+
+# Set context window
+PARAMETER num_ctx 4096
+
+# Optional: Reduce repetition
+PARAMETER repeat_penalty 1.1
+
+# System prompt with Briscola rules in English
+SYSTEM """
+
+"""
