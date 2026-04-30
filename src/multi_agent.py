@@ -30,8 +30,6 @@ class GameResult:
 class MultiAgentRunner:
     """Coordinates multiple agents against a single RisikoEnv."""
 
-from collections.abc import Sequence
-
     def __init__(
         self,
         env: RisikoEnv,

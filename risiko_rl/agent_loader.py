@@ -1,0 +1,64 @@
+"""Agent loader for resolving checkpoint paths and string tokens."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import torch
+
+from src.agents.llm_opponent import LLMOpponent
+from src.agents.ppo_agent import PPOAgent
+from src.agents.random_agent import RandomAgent
+from src.models.actor_critic import ActorCritic
+from src.models.utils import get_obs_dim
+
+_ACTION_DIMS = {
+    "action_type": 6,
+    "param_a": 42,
+    "param_b": 42,
+    "param_c": 43,
+    "param_d": 43,
+}
+
+
+def load_agent(spec: str, *, seed: int | None = None) -> Any:
+    """Load an agent from a checkpoint path or string token.
+
+    Args:
+        spec: Either ``'random'``, ``'llm'``, or a path to a ``.pt`` checkpoint.
+        seed: Optional seed for ``RandomAgent``.
+
+    Returns:
+        An ``Agent`` instance.
+
+    Raises:
+        FileNotFoundError: If *spec* is a path that does not exist.
+        ValueError: If *spec* is not recognised.
+    """
+    spec_lower = spec.lower().strip()
+
+    if spec_lower == "random":
+        return RandomAgent(seed=seed)
+
+    if spec_lower == "llm":
+        return LLMOpponent()
+
+    path = Path(spec)
+    if not path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {spec}")
+
+    checkpoint = torch.load(path, weights_only=False)
+    config = checkpoint.get("config", {})
+    network_cfg = config.get("network", {})
+    hidden_sizes = network_cfg.get("hidden_sizes", (256, 256))
+
+    net = ActorCritic(
+        obs_dim=get_obs_dim(),
+        hidden_size=hidden_sizes[0] if hidden_sizes else 256,
+        num_layers=len(hidden_sizes) if hidden_sizes else 2,
+        action_dims=_ACTION_DIMS,
+    )
+    net.load_state_dict(checkpoint["trainer_state"]["model"])
+    device = config.get("device", "cpu")
+    return PPOAgent(net, device=device)

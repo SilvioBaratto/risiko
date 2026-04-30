@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -11,6 +11,8 @@ from src.config import load_config, merge_cli_overrides, resolve_device
 from src.models.actor_critic import ActorCritic
 from src.models.ppo import PPOTrainer
 from src.models.utils import get_obs_dim
+
+from .agent_loader import load_agent
 
 _ACTION_DIMS = {
     "action_type": 6,
@@ -90,6 +92,157 @@ def train(
     trainer = PPOTrainer(net, cfg.ppo)
     typer.echo(f"Model has {sum(p.numel() for p in net.parameters())} parameters")
     typer.echo(f"PPOTrainer ready: {trainer}")
+
+
+@app.command()
+def watch(
+    agent1: str = typer.Option("random", "--agent1", help="Agent spec for player 1"),
+    agent2: str = typer.Option("random", "--agent2", help="Agent spec for player 2"),
+    seed: int = typer.Option(42, "--seed", help="Game RNG seed"),
+    max_turns: int = typer.Option(10_000, "--max-turns", help="Turn cap per game"),
+    mode: str = typer.Option("ascii", "--mode", help="Rendering mode: ascii or matplotlib"),
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Export replay to file"),
+    ] = None,
+):
+    """Watch a single game between two agents, rendered frame-by-frame."""
+    from src.env import RisikoEnv
+    from src.multi_agent import MultiAgentRunner
+    from visualization.render_game import ReplayExporter, render_ascii, render_matplotlib
+
+    if mode not in {"ascii", "matplotlib"}:
+        raise typer.BadParameter(f"Invalid mode: {mode}. Choose 'ascii' or 'matplotlib'.")
+
+    env = RisikoEnv(n_players=2)
+    agents = [load_agent(agent1), load_agent(agent2)]
+    runner = MultiAgentRunner(env, agents, max_turns=max_turns)
+    result = runner.run_game(seed=seed)
+
+    exporter = ReplayExporter() if output else None
+
+    for obs, _action, _reward in result.trajectories:
+        if mode == "ascii":
+            typer.echo(render_ascii(obs))
+            typer.echo("-" * 40)
+        elif mode == "matplotlib":
+            fig = render_matplotlib(obs)
+            # In CLI watch mode, matplotlib figures are not shown interactively
+            import matplotlib.pyplot as plt
+
+            plt.close(fig)
+        if exporter is not None:
+            exporter.add_frame(obs)
+
+    winner_text = f"Player {result.winner}" if result.winner is not None else "Draw"
+    typer.echo(f"Game over. Winner: {winner_text} (turns: {result.n_turns})")
+
+    if exporter is not None and output is not None:
+        if output.suffix == ".gif":
+            exporter.export_gif(output)
+        else:
+            exporter.export_gif(output.with_suffix(".gif"))
+        typer.echo(f"Replay saved to {output}")
+
+
+@app.command()
+def evaluate(
+    agent_a: str = typer.Option("random", "--agent-a", help="Agent spec for player A"),
+    agent_b: str = typer.Option("random", "--agent-b", help="Agent spec for player B"),
+    n_games: int = typer.Option(100, "--n-games", help="Number of games to play"),
+    n_players: int = typer.Option(2, "--n-players", help="Total players (2+ fills with random)"),
+    seed: int = typer.Option(42, "--seed", help="Evaluation RNG seed"),
+    max_turns: int = typer.Option(10_000, "--max-turns", help="Turn cap per game"),
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Export CSV summary"),
+    ] = None,
+):
+    """Run a head-to-head evaluation and print win-rate statistics."""
+    from training.evaluate import evaluate_agents
+
+    agent_a_obj = load_agent(agent_a)
+    agent_b_obj = load_agent(agent_b)
+
+    typer.echo(f"Evaluating {agent_a} vs {agent_b} over {n_games} games ...")
+    result = evaluate_agents(
+        agent_a_obj,
+        agent_b_obj,
+        n_games=n_games,
+        n_players=n_players,
+        seed=seed,
+        max_turns=max_turns,
+    )
+
+    typer.echo("")
+    typer.echo(f"{'Metric':<20} {'Agent A':<15} {'Agent B':<15}")
+    typer.echo("-" * 50)
+    typer.echo(f"{'Win rate':<20} {result.win_rate_a:<15.3f} {result.win_rate_b:<15.3f}")
+    typer.echo(f"{'Draw rate':<20} {result.draw_rate:<15.3f}")
+    typer.echo(f"{'Avg length':<20} {result.avg_length:<15.1f}")
+    typer.echo(f"{'CI (A)':<20} [{result.ci_a[0]:.3f}, {result.ci_a[1]:.3f}]")
+    typer.echo(f"{'CI (B)':<20} [{result.ci_b[0]:.3f}, {result.ci_b[1]:.3f}]")
+
+    if output is not None:
+        result.to_csv(output)
+        typer.echo(f"\nCSV saved to {output}")
+
+
+@app.command()
+def benchmark(
+    games: int = typer.Option(50, "--games", help="Games per matchup"),
+    n_players: int = typer.Option(2, "--n-players", help="Total players per game"),
+    seed: int = typer.Option(42, "--seed", help="RNG seed"),
+    max_turns: int = typer.Option(10_000, "--max-turns", help="Turn cap per game"),
+    rl_checkpoint: Annotated[
+        Path | None,
+        typer.Option("--rl-checkpoint", help="Optional RL checkpoint path"),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Export CSV summary"),
+    ] = None,
+):
+    """Run Monte Carlo baselines: random vs random, random vs LLM, and optionally RL vs LLM."""
+    from training.monte_carlo import run_baseline_tournament
+
+    matchups: list[tuple[str, Any, Any]] = [
+        ("random_vs_random", load_agent("random"), load_agent("random")),
+        ("random_vs_llm", load_agent("random"), load_agent("llm")),
+    ]
+    if rl_checkpoint is not None:
+        matchups.append(("rl_vs_llm", load_agent(str(rl_checkpoint)), load_agent("llm")))
+
+    typer.echo(f"Running {len(matchups)} matchups, {games} games each ...")
+    results = run_baseline_tournament(
+        matchups,
+        n_games=games,
+        n_players=n_players,
+        seed=seed,
+        max_turns=max_turns,
+    )
+
+    typer.echo("")
+    typer.echo(
+        f"{'Matchup':<20} {'Win L':<8} {'Win R':<8} {'Draw':<8} "
+        f"{'Avg len':<10} {'CI L':<20} {'CI R':<20}"
+    )
+    typer.echo("-" * 100)
+    for r in results.values():
+        ci_l = f"[{r.ci_left[0]:.3f}, {r.ci_left[1]:.3f}]"
+        ci_r = f"[{r.ci_right[0]:.3f}, {r.ci_right[1]:.3f}]"
+        typer.echo(
+            f"{r.matchup:<20} {r.win_rate_left:<8.3f} {r.win_rate_right:<8.3f} "
+            f"{r.draw_rate:<8.3f} {r.avg_length:<10.1f} {ci_l:<20} {ci_r:<20}"
+        )
+
+    if output is not None:
+        from training.monte_carlo import BaselineResult
+
+        path = output if output.suffix == ".csv" else output.with_suffix(".csv")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        BaselineResult.to_csv_all(results, path)
+        typer.echo(f"\nCSV saved to {path}")
 
 
 def main():

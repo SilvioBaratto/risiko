@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 import numpy as np
+import torch
 
 
 @runtime_checkable
@@ -18,6 +19,7 @@ class Agent(Protocol):
         *,
         deterministic: bool = False,
     ) -> dict[str, int]:
+        """Select an action given observation and legal actions."""
         ...
 
     def act_with_meta(
@@ -26,7 +28,7 @@ class Agent(Protocol):
         legal_actions: list[dict[str, int]],
         *,
         deterministic: bool = False,
-    ) -> tuple[dict[str, int], "torch.Tensor", "torch.Tensor"]:
+    ) -> tuple[dict[str, int], torch.Tensor, torch.Tensor]:
         """Select an action given observation and legal actions.
 
         Args:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 import torch.nn.functional as nnf
 
@@ -24,6 +26,19 @@ class PPOTrainer:
         self.net = net
         self.config = config
         self.optimizer = torch.optim.Adam(net.parameters(), lr=config.lr)
+
+    def save_checkpoint(self) -> dict[str, Any]:
+        """Return trainer state for checkpointing."""
+        return {
+            "model": self.net.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "config": self.config,
+        }
+
+    def load_checkpoint(self, state: dict[str, Any]) -> None:
+        """Restore trainer state from a checkpoint dict."""
+        self.net.load_state_dict(state["model"])
+        self.optimizer.load_state_dict(state["optimizer"])
 
     def update(self, buffer: RolloutBuffer) -> dict[str, float]:
         """Run PPO update over the rollout buffer.

@@ -24,9 +24,20 @@ class DummyAgent:
         self,
         obs: dict[str, np.ndarray],
         legal_actions: list[dict[str, int]],
+        *,
         deterministic: bool = False,
     ) -> dict[str, int]:
         return {"action_type": 0, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0}
+
+    def act_with_meta(
+        self,
+        obs: dict[str, np.ndarray],
+        legal_actions: list[dict[str, int]],
+        *,
+        deterministic: bool = False,
+    ) -> tuple[dict[str, int], torch.Tensor, torch.Tensor]:
+        action = self.act(obs, legal_actions, deterministic=deterministic)
+        return action, torch.tensor(0.0), torch.tensor(0.0)
 
 
 class BadAgent:
@@ -42,9 +53,9 @@ class BadAgent:
 
 def test_agent_protocol_runtime_checkable() -> None:
     assert isinstance(DummyAgent(), Agent)
-    # @runtime_checkable only verifies structural presence of act(), not kwarg-only markers.
-    # BadAgent passes because it has an act() method; signature enforcement is static only.
-    assert isinstance(BadAgent(), Agent)
+    # @runtime_checkable enforces keyword-only markers at runtime.
+    # BadAgent is rejected because act() lacks the keyword-only separator.
+    assert not isinstance(BadAgent(), Agent)
 
 
 def test_agent_protocol_act_signature() -> None:
