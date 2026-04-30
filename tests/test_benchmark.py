@@ -7,28 +7,31 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from risiko_rl.cli import app
+from src.agents.llm_opponent import LLMOpponent
 
 runner = CliRunner()
+
+
+def _fake_call(self, snapshot):
+    from baml_client import types as baml_types
+
+    return baml_types.RisikoAction(
+        action_type="skip",
+        param_a=0,
+        param_b=0,
+        param_c=0,
+        param_d=0,
+    )
 
 
 class TestBenchmarkCommand:
     """Benchmark command runs Monte Carlo baseline matchups."""
 
     def test_benchmark_random_vs_random_runs(self, monkeypatch) -> None:
-        from baml_client import types as baml_types
-
-        def _fake_generate(state):
-            return baml_types.RisikoAction(
-                action_type="skip",
-                param_a=0,
-                param_b=0,
-                param_c=0,
-                param_d=0,
-            )
-
         monkeypatch.setattr(
-            "src.agents.llm_opponent.b.GenerateRisikoAction",
-            _fake_generate,
+            LLMOpponent,
+            "_call_with_timeout",
+            _fake_call,
         )
 
         result = runner.invoke(
@@ -49,20 +52,10 @@ class TestBenchmarkCommand:
         assert "random_vs_random" in result.output
 
     def test_benchmark_includes_llm_matchup(self, monkeypatch) -> None:
-        from baml_client import types as baml_types
-
-        def _fake_generate(state):
-            return baml_types.RisikoAction(
-                action_type="skip",
-                param_a=0,
-                param_b=0,
-                param_c=0,
-                param_d=0,
-            )
-
         monkeypatch.setattr(
-            "src.agents.llm_opponent.b.GenerateRisikoAction",
-            _fake_generate,
+            LLMOpponent,
+            "_call_with_timeout",
+            _fake_call,
         )
 
         result = runner.invoke(
@@ -83,20 +76,10 @@ class TestBenchmarkCommand:
         assert "random_vs_llm" in result.output
 
     def test_benchmark_summary_table_headers(self, monkeypatch) -> None:
-        from baml_client import types as baml_types
-
-        def _fake_generate(state):
-            return baml_types.RisikoAction(
-                action_type="skip",
-                param_a=0,
-                param_b=0,
-                param_c=0,
-                param_d=0,
-            )
-
         monkeypatch.setattr(
-            "src.agents.llm_opponent.b.GenerateRisikoAction",
-            _fake_generate,
+            LLMOpponent,
+            "_call_with_timeout",
+            _fake_call,
         )
 
         result = runner.invoke(
@@ -118,20 +101,10 @@ class TestBenchmarkCommand:
         assert "Win L" in result.output
 
     def test_benchmark_with_output_csv(self, monkeypatch, tmp_path: Path) -> None:
-        from baml_client import types as baml_types
-
-        def _fake_generate(state):
-            return baml_types.RisikoAction(
-                action_type="skip",
-                param_a=0,
-                param_b=0,
-                param_c=0,
-                param_d=0,
-            )
-
         monkeypatch.setattr(
-            "src.agents.llm_opponent.b.GenerateRisikoAction",
-            _fake_generate,
+            LLMOpponent,
+            "_call_with_timeout",
+            _fake_call,
         )
 
         out_path = tmp_path / "benchmark.csv"
@@ -158,20 +131,10 @@ class TestBenchmarkCommand:
         assert "matchup" in content
 
     def test_benchmark_three_players(self, monkeypatch) -> None:
-        from baml_client import types as baml_types
-
-        def _fake_generate(state):
-            return baml_types.RisikoAction(
-                action_type="skip",
-                param_a=0,
-                param_b=0,
-                param_c=0,
-                param_d=0,
-            )
-
         monkeypatch.setattr(
-            "src.agents.llm_opponent.b.GenerateRisikoAction",
-            _fake_generate,
+            LLMOpponent,
+            "_call_with_timeout",
+            _fake_call,
         )
 
         result = runner.invoke(

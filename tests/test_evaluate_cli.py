@@ -7,8 +7,21 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from risiko_rl.cli import app
+from src.agents.llm_opponent import LLMOpponent
 
 runner = CliRunner()
+
+
+def _fake_call(self, snapshot):
+    from baml_client import types as baml_types
+
+    return baml_types.RisikoAction(
+        action_type="skip",
+        param_a=0,
+        param_b=0,
+        param_c=0,
+        param_d=0,
+    )
 
 
 class TestEvaluateCommand:
@@ -37,20 +50,10 @@ class TestEvaluateCommand:
         assert "Win rate" in result.output
 
     def test_evaluate_llm_vs_random(self, monkeypatch) -> None:
-        from baml_client import types as baml_types
-
-        def _fake_generate(state):
-            return baml_types.RisikoAction(
-                action_type="skip",
-                param_a=0,
-                param_b=0,
-                param_c=0,
-                param_d=0,
-            )
-
         monkeypatch.setattr(
-            "src.agents.llm_opponent.b.GenerateRisikoAction",
-            _fake_generate,
+            LLMOpponent,
+            "_call_with_timeout",
+            _fake_call,
         )
 
         result = runner.invoke(

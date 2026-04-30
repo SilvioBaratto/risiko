@@ -22,5 +22,8 @@ pytest>=9.0.3
 pytest-cov>=7.1.0
 ruff>=0.15.12
 
+# BAML
+baml-py>=0.222.0
+
 # Viz
 playwright>=1.59.0

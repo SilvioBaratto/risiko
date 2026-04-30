@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from src.agents.base import Agent
+from src.agents.llm_opponent import LLMOpponent
 from src.agents.ppo_agent import PPOAgent
 from src.agents.random_agent import RandomAgent
 from src.models.actor_critic import ActorCritic
@@ -355,3 +356,39 @@ class TestPPOAgent:
         actions = [agent.act(dummy_obs, legal, deterministic=True) for _ in range(20)]
         # All deterministic calls should return identical actions
         assert all(a == actions[0] for a in actions)
+
+
+# ------------------------------------------------------------------
+# LLMOpponent protocol conformance
+# ------------------------------------------------------------------
+
+
+class TestLLMOpponentProtocolConformance:
+    """LLMOpponent runtime protocol checks in test_agents.py."""
+
+    def test_conforms_to_agent_protocol(self) -> None:
+        agent = LLMOpponent()
+        assert isinstance(agent, Agent)
+
+    def test_act_with_meta_returns_tuple(self) -> None:
+        from unittest.mock import patch
+
+        from baml_client import types as baml_types
+        from src.env import RisikoEnv
+
+        agent = LLMOpponent()
+        env = RisikoEnv(n_players=3)
+        obs, info = env.reset(seed=42)
+        legal = info["legal_actions"]
+        with patch.object(agent, "_call_with_timeout") as mock_call:
+            mock_call.return_value = baml_types.RisikoAction(
+                action_type="skip",
+                param_a=0,
+                param_b=0,
+                param_c=0,
+                param_d=0,
+            )
+            action, log_prob, value = agent.act_with_meta(obs, legal)
+        assert isinstance(action, dict)
+        assert isinstance(log_prob, torch.Tensor)
+        assert isinstance(value, torch.Tensor)
