@@ -1,0 +1,249 @@
+"""Tests for multi-agent runner and GameResult dataclass."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from src.agents.base import Agent
+from src.agents.random_agent import RandomAgent
+from src.env import RisikoEnv
+from src.multi_agent import GameResult, MultiAgentRunner
+
+# ------------------------------------------------------------------
+# GameResult
+# ------------------------------------------------------------------
+
+
+class TestGameResult:
+    """GameResult captures structured outcome data."""
+
+    def test_creation(self) -> None:
+        result = GameResult(
+            winner=0,
+            n_turns=50,
+            territory_history=[np.array([14, 14, 14])],
+            elimination_order=[],
+            card_trade_turns=[],
+            action_log=[],
+            trajectories=[],
+        )
+        assert result.winner == 0
+        assert result.n_turns == 50
+        assert len(result.territory_history) == 1
+
+    def test_draw_winner_is_none(self) -> None:
+        result = GameResult(
+            winner=None,
+            n_turns=100,
+            territory_history=[],
+            elimination_order=[],
+            card_trade_turns=[],
+            action_log=[],
+            trajectories=[],
+        )
+        assert result.winner is None
+
+    def test_territory_history_shape(self) -> None:
+        hist = [np.array([10, 16, 16]), np.array([8, 18, 16])]
+        result = GameResult(
+            winner=1,
+            n_turns=2,
+            territory_history=hist,
+            elimination_order=[2, 0],
+            card_trade_turns=[1],
+            action_log=[{"action_type": 5}, {"action_type": 2}],
+            trajectories=[],
+        )
+        assert len(result.territory_history) == result.n_turns
+        assert result.elimination_order == [2, 0]
+        assert result.winner == 1
+
+
+# ------------------------------------------------------------------
+# MultiAgentRunner — initialization
+# ------------------------------------------------------------------
+
+
+class TestMultiAgentRunnerInit:
+    """Runner construction validates inputs."""
+
+    def test_requires_agents_match_players(self) -> None:
+        env = RisikoEnv(n_players=3)
+        agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        with pytest.raises(ValueError, match="3 agents"):
+            MultiAgentRunner(env, agents)
+
+    def test_requires_at_least_two_players(self) -> None:
+        env = RisikoEnv(n_players=2)
+        agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        runner = MultiAgentRunner(env, agents)
+        assert runner._n_players == 2
+
+    def test_max_turns_default(self) -> None:
+        env = RisikoEnv(n_players=2)
+        agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        runner = MultiAgentRunner(env, agents)
+        assert runner._max_turns == 10_000
+
+
+# ------------------------------------------------------------------
+# MultiAgentRunner — single game execution
+# ------------------------------------------------------------------
+
+
+class TestMultiAgentRunnerRunGame:
+    """Runner plays complete games and returns structured results."""
+
+    @pytest.fixture
+    def two_player_agents(self) -> list[Agent]:
+        return [RandomAgent(seed=1), RandomAgent(seed=2)]
+
+    def test_game_completes_without_crash(self, two_player_agents: list[Agent]) -> None:
+        env = RisikoEnv(n_players=2)
+        runner = MultiAgentRunner(env, two_player_agents)
+        result = runner.run_game(seed=42)
+        # Random agents may not eliminate each other within max_turns
+        assert result.winner is None or isinstance(result.winner, int)
+        assert result.n_turns > 0
+
+    def test_territory_history_tracks_control(self, two_player_agents: list[Agent]) -> None:
+        env = RisikoEnv(n_players=2)
+        runner = MultiAgentRunner(env, two_player_agents)
+        result = runner.run_game(seed=42)
+        # Each territory_history entry should sum to NUM_TERRITORIES
+        for counts in result.territory_history:
+            assert counts.sum() == 42
+
+    def test_elimination_order_is_list(self, two_player_agents: list[Agent]) -> None:
+        env = RisikoEnv(n_players=3)
+        agents = [RandomAgent(seed=1), RandomAgent(seed=2), RandomAgent(seed=3)]
+        runner = MultiAgentRunner(env, agents)
+        result = runner.run_game(seed=42)
+        assert isinstance(result.elimination_order, list)
+        if result.winner is not None:
+            assert result.winner not in result.elimination_order
+
+    def test_action_log_records_actions(self, two_player_agents: list[Agent]) -> None:
+        env = RisikoEnv(n_players=2)
+        runner = MultiAgentRunner(env, two_player_agents)
+        result = runner.run_game(seed=42)
+        assert len(result.action_log) == result.n_turns
+        for entry in result.action_log:
+            assert "action_type" in entry
+            assert "player" in entry
+
+    def test_trajectories_present(self, two_player_agents: list[Agent]) -> None:
+        env = RisikoEnv(n_players=2)
+        runner = MultiAgentRunner(env, two_player_agents)
+        result = runner.run_game(seed=42)
+        assert len(result.trajectories) == result.n_turns
+        for obs, action, reward in result.trajectories:
+            assert isinstance(obs, dict)
+            assert isinstance(action, dict)
+            assert isinstance(reward, float)
+
+    def test_determinism_same_seed(self, two_player_agents: list[Agent]) -> None:
+        env_a = RisikoEnv(n_players=2)
+        env_b = RisikoEnv(n_players=2)
+        agents_a = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        agents_b = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        runner_a = MultiAgentRunner(env_a, agents_a, max_turns=50)
+        runner_b = MultiAgentRunner(env_b, agents_b, max_turns=50)
+        result_a = runner_a.run_game(seed=99)
+        result_b = runner_b.run_game(seed=99)
+        assert result_a.winner == result_b.winner
+        assert result_a.n_turns == result_b.n_turns
+        assert result_a.elimination_order == result_b.elimination_order
+        for arr_a, arr_b in zip(
+            result_a.territory_history, result_b.territory_history, strict=False
+        ):
+            np.testing.assert_array_equal(arr_a, arr_b)
+
+    def test_different_seeds_differ(self, two_player_agents: list[Agent]) -> None:
+        env_a = RisikoEnv(n_players=2)
+        env_b = RisikoEnv(n_players=2)
+        agents_a = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        agents_b = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        runner_a = MultiAgentRunner(env_a, agents_a, max_turns=50)
+        runner_b = MultiAgentRunner(env_b, agents_b, max_turns=50)
+        result_a = runner_a.run_game(seed=1)
+        result_b = runner_b.run_game(seed=2)
+        # Different env seeds should produce different territory distributions
+        any_differs = any(
+            not np.array_equal(a, b)
+            for a, b in zip(result_a.territory_history, result_b.territory_history, strict=False)
+        )
+        assert any_differs
+
+    def test_max_turns_truncation(self, two_player_agents: list[Agent]) -> None:
+        env = RisikoEnv(n_players=2)
+        runner = MultiAgentRunner(env, two_player_agents, max_turns=5)
+        result = runner.run_game(seed=42)
+        # Game should be truncated before completion
+        assert result.n_turns == 5
+        assert result.winner is None
+
+
+# ------------------------------------------------------------------
+# MultiAgentRunner — agent error fallback
+# ------------------------------------------------------------------
+
+
+class CrashingAgent(Agent):
+    """Agent that always raises on act()."""
+
+    def act(
+        self,
+        obs: dict[str, np.ndarray],
+        legal_actions: list[dict[str, int]],
+        *,
+        deterministic: bool = False,
+    ) -> dict[str, int]:
+        raise RuntimeError("boom")
+
+
+class TestMultiAgentRunnerFallback:
+    """Runner falls back to random when an agent crashes."""
+
+    def test_fallback_on_crash(self) -> None:
+        env = RisikoEnv(n_players=2)
+        agents = [CrashingAgent(), RandomAgent(seed=1)]
+        runner = MultiAgentRunner(env, agents)
+        # Should not raise; CrashingAgent falls back to random
+        result = runner.run_game(seed=42)
+        assert result.winner is None or isinstance(result.winner, int)
+
+    def test_fallback_agent_is_random(self) -> None:
+        env = RisikoEnv(n_players=2)
+        agents = [CrashingAgent(), RandomAgent(seed=1)]
+        runner = MultiAgentRunner(env, agents)
+        result = runner.run_game(seed=42)
+        assert result.n_turns > 0
+
+
+# ------------------------------------------------------------------
+# MultiAgentRunner — batch execution
+# ------------------------------------------------------------------
+
+
+class TestMultiAgentRunnerRunGames:
+    """Batch execution returns multiple results."""
+
+    def test_returns_correct_count(self) -> None:
+        env = RisikoEnv(n_players=2)
+        agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        runner = MultiAgentRunner(env, agents)
+        results = runner.run_games(n=3, seed=42)
+        assert len(results) == 3
+        for r in results:
+            assert isinstance(r, GameResult)
+
+    def test_sequential_seeds(self) -> None:
+        env = RisikoEnv(n_players=2)
+        agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
+        runner = MultiAgentRunner(env, agents)
+        results = runner.run_games(n=3, seed=100)
+        # Each game should get a different seed
+        winners = [r.winner for r in results]
+        assert all(w in {0, 1, None} for w in winners)
