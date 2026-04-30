@@ -144,7 +144,12 @@ class RisikoEnv(gym.Env):
             "reinforcements_remaining": np.array(s.reinforcements_remaining, dtype=np.int32),
             "turn_capture": np.array(s.turn_capture, dtype=np.int32),
             "n_players": np.array(s.n_players, dtype=np.int32),
-            "eliminated": s.eliminated.copy(),
+            "eliminated": np.pad(
+                s.eliminated.copy(),
+                (0, 6 - s.n_players),
+                mode="constant",
+                constant_values=1,
+            ),
         }
 
     def _get_info(self) -> dict[str, Any]:

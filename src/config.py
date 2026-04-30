@@ -14,6 +14,8 @@ from typing import Any, TypeVar, get_type_hints
 
 import yaml
 
+from src.utils.reward_config import RewardConfig
+
 T = TypeVar("T")
 
 
@@ -42,8 +44,18 @@ class NetworkConfig:
 
 
 @dataclass(frozen=True)
+class SelfPlayConfig:
+    """Self-play opponent rotation and promotion settings."""
+
+    opponent_update_freq: int = 50
+    best_metric: str = "win_rate"
+    promote_threshold: float = 0.55
+    eval_games: int = 10
+
+
+@dataclass(frozen=True)
 class TrainingConfig:
-    """Root configuration bundling PPO, network, and training settings."""
+    """Root configuration bundling PPO, network, training, and self-play settings."""
 
     total_timesteps: int = 1_000_000
     n_envs: int = 1
@@ -53,6 +65,8 @@ class TrainingConfig:
     device: str = "auto"
     ppo: PPOConfig = field(default_factory=PPOConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
+    reward: RewardConfig = field(default_factory=RewardConfig)
+    self_play: SelfPlayConfig = field(default_factory=SelfPlayConfig)
 
 
 def load_config(path: Path) -> TrainingConfig:

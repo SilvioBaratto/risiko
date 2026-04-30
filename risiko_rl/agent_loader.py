@@ -12,14 +12,7 @@ from src.agents.ppo_agent import PPOAgent
 from src.agents.random_agent import RandomAgent
 from src.models.actor_critic import ActorCritic
 from src.models.utils import get_obs_dim
-
-_ACTION_DIMS = {
-    "action_type": 6,
-    "param_a": 42,
-    "param_b": 42,
-    "param_c": 43,
-    "param_d": 43,
-}
+from src.utils.constants import ACTION_DIMS
 
 
 def load_agent(spec: str, *, seed: int | None = None) -> Any:
@@ -57,7 +50,7 @@ def load_agent(spec: str, *, seed: int | None = None) -> Any:
         obs_dim=get_obs_dim(),
         hidden_size=hidden_sizes[0] if hidden_sizes else 256,
         num_layers=len(hidden_sizes) if hidden_sizes else 2,
-        action_dims=_ACTION_DIMS,
+        action_dims=ACTION_DIMS,
     )
     net.load_state_dict(checkpoint["trainer_state"]["model"])
     device = config.get("device", "cpu")

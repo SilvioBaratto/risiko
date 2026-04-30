@@ -106,6 +106,7 @@ class _GameRecorder:
         self._action_log: list[dict[str, Any]] = []
         self._trajectories: list[tuple[dict[str, np.ndarray], dict[str, int], float]] = []
         self._pending_trade_hand_size: int | None = None
+        self._prev_eliminated: np.ndarray = np.zeros(6, dtype=np.int32)
 
     def record_action(self, player: int, action: dict[str, int]) -> None:
         self._action_log.append({**action, "player": player})
@@ -121,6 +122,7 @@ class _GameRecorder:
     ) -> None:
         self._territory_history.append(self._territory_counts(obs))
         self._trajectories.append((obs.copy(), action.copy(), reward))
+        self._detect_eliminations(obs)
 
     def detect_trade(self, prev_trade_count: int, turn: int) -> None:
         if self._env.state.trade_count > prev_trade_count:
@@ -159,3 +161,10 @@ class _GameRecorder:
         if len(active) == 1:
             return active[0]
         return None
+
+    def _detect_eliminations(self, obs: dict[str, np.ndarray]) -> None:
+        curr = obs["eliminated"]
+        for p in range(self._n_players):
+            if self._prev_eliminated[p] == 0 and curr[p] == 1:
+                self._elimination_order.append(p)
+        self._prev_eliminated = curr.copy()

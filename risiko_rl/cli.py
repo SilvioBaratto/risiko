@@ -7,20 +7,10 @@ from typing import Annotated, Any
 
 import typer
 
-from src.config import load_config, merge_cli_overrides, resolve_device
-from src.models.actor_critic import ActorCritic
-from src.models.ppo import PPOTrainer
-from src.models.utils import get_obs_dim
+from src.config import load_config, merge_cli_overrides
+from training.self_play import SelfPlayTrainer
 
 from .agent_loader import load_agent
-
-_ACTION_DIMS = {
-    "action_type": 6,
-    "param_a": 42,
-    "param_b": 42,
-    "param_c": 43,
-    "param_d": 43,
-}
 
 app = typer.Typer(help="Risiko RL — train and evaluate PPO agents")
 
@@ -35,6 +25,14 @@ def train(
             help="Path to YAML config file",
         ),
     ] = Path("config/default.yaml"),
+    checkpoint_dir: Annotated[
+        Path,
+        typer.Option("--checkpoint-dir", help="Checkpoint save directory"),
+    ] = Path("models"),
+    log_dir: Annotated[
+        Path | None,
+        typer.Option("--log-dir", help="TensorBoard log directory"),
+    ] = None,
     lr: Annotated[
         float | None,
         typer.Option("--lr", help="Learning rate (overrides config)"),
@@ -79,19 +77,11 @@ def train(
             overrides[key] = value
 
     cfg = merge_cli_overrides(cfg, overrides)
-    device_str = resolve_device(cfg.device)
     typer.echo(f"Training with config: {cfg}")
-    typer.echo(f"Resolved device: {device_str}")
 
-    net = ActorCritic(
-        obs_dim=get_obs_dim(),
-        hidden_size=cfg.network.hidden_sizes[0],
-        num_layers=len(cfg.network.hidden_sizes),
-        action_dims=_ACTION_DIMS,
-    ).to(device_str)
-    trainer = PPOTrainer(net, cfg.ppo)
-    typer.echo(f"Model has {sum(p.numel() for p in net.parameters())} parameters")
-    typer.echo(f"PPOTrainer ready: {trainer}")
+    trainer = SelfPlayTrainer(cfg, checkpoint_dir=checkpoint_dir, log_dir=log_dir)
+    trainer.train()
+    typer.echo(f"Training complete. Episodes: {trainer._episode}")
 
 
 @app.command()

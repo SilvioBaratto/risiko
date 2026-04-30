@@ -20,10 +20,13 @@ def _config_to_dict(config: TrainingConfig) -> dict[str, Any]:
 
 def _config_from_dict(raw: dict[str, Any]) -> TrainingConfig:
     """Deserialize a TrainingConfig from a plain dict."""
-    from src.config import NetworkConfig
+    from src.config import NetworkConfig, SelfPlayConfig
+    from src.utils.reward_config import RewardConfig
 
     ppo_raw = raw.get("ppo", {})
     network_raw = raw.get("network", {})
+    reward_raw = raw.get("reward", {})
+    self_play_raw = raw.get("self_play", {})
     return TrainingConfig(
         total_timesteps=raw.get("total_timesteps", 1_000_000),
         n_envs=raw.get("n_envs", 1),
@@ -33,6 +36,8 @@ def _config_from_dict(raw: dict[str, Any]) -> TrainingConfig:
         device=raw.get("device", "auto"),
         ppo=PPOConfig(**ppo_raw),
         network=NetworkConfig(**network_raw),
+        reward=RewardConfig(**reward_raw),
+        self_play=SelfPlayConfig(**self_play_raw),
     )
 
 

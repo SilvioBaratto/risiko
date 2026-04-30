@@ -164,3 +164,12 @@ def get_trade_value(trade_count: int) -> int:
 def territory_to_continent(territory_id: int) -> str | None:
     """Return the continent name for a territory, or None if invalid."""
     return _TERRITORY_TO_CONTINENT.get(territory_id)
+
+
+ACTION_DIMS: dict[str, int] = {
+    "action_type": 6,
+    "param_a": 42,
+    "param_b": 42,
+    "param_c": 43,
+    "param_d": 43,
+}

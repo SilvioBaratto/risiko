@@ -234,8 +234,65 @@ class TestMultiAgentRunnerFallback:
 
 
 # ------------------------------------------------------------------
-# MultiAgentRunner — batch execution
+# _GameRecorder — elimination detection
 # ------------------------------------------------------------------
+
+
+class TestGameRecorderEliminationDetection:
+    """_GameRecorder must detect and record elimination order from obs transitions."""
+
+    def _make_obs(self, eliminated: list[int]) -> dict[str, np.ndarray]:
+        return {
+            "territory_owner": np.zeros(42, dtype=np.int32),
+            "armies": np.zeros(42, dtype=np.int32),
+            "phase": np.array(0, dtype=np.int32),
+            "current_player": np.array(0, dtype=np.int32),
+            "cards": np.zeros((5, 4), dtype=np.int32),
+            "continent_control": np.zeros(6, dtype=np.int32),
+            "trade_count": np.array(0, dtype=np.int32),
+            "reinforcements_remaining": np.array(0, dtype=np.int32),
+            "turn_capture": np.array(0, dtype=np.int32),
+            "n_players": np.array(3, dtype=np.int32),
+            "eliminated": np.array(eliminated, dtype=np.int32),
+        }
+
+    def test_detects_single_elimination(self) -> None:
+        from src.multi_agent import _GameRecorder
+
+        env = RisikoEnv(n_players=3)
+        recorder = _GameRecorder(env, 3)
+        recorder.record_step(self._make_obs([0, 0, 0, 0, 0, 0]), {"action_type": 5}, 0.0)
+        recorder.record_step(self._make_obs([0, 0, 1, 0, 0, 0]), {"action_type": 5}, 0.0)
+        assert recorder._elimination_order == [2]
+
+    def test_detects_multiple_eliminations_same_step(self) -> None:
+        from src.multi_agent import _GameRecorder
+
+        env = RisikoEnv(n_players=4)
+        recorder = _GameRecorder(env, 4)
+        recorder.record_step(self._make_obs([0, 0, 0, 0, 0, 0]), {"action_type": 5}, 0.0)
+        recorder.record_step(self._make_obs([0, 0, 1, 1, 0, 0]), {"action_type": 5}, 0.0)
+        assert recorder._elimination_order == [2, 3]
+
+    def test_no_false_positives_on_repeat_obs(self) -> None:
+        from src.multi_agent import _GameRecorder
+
+        env = RisikoEnv(n_players=3)
+        recorder = _GameRecorder(env, 3)
+        recorder.record_step(self._make_obs([0, 0, 1, 0, 0, 0]), {"action_type": 5}, 0.0)
+        recorder.record_step(self._make_obs([0, 0, 1, 0, 0, 0]), {"action_type": 5}, 0.0)
+        assert recorder._elimination_order == [2]
+
+    def test_elimination_order_in_game_result(self) -> None:
+        from src.multi_agent import _GameRecorder
+
+        env = RisikoEnv(n_players=3)
+        recorder = _GameRecorder(env, 3)
+        recorder.record_step(self._make_obs([0, 0, 0, 0, 0, 0]), {"action_type": 5}, 0.0)
+        recorder.record_step(self._make_obs([0, 0, 1, 0, 0, 0]), {"action_type": 5}, 0.0)
+        recorder.record_step(self._make_obs([0, 1, 1, 0, 0, 0]), {"action_type": 5}, 0.0)
+        result = recorder.build_result()
+        assert result.elimination_order == [2, 1]
 
 
 class TestMultiAgentRunnerRunGames:
