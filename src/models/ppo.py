@@ -84,7 +84,6 @@ class PPOTrainer:
         old_log_probs = batch["log_probs"]
         advantages = batch["advantages"]
         returns = batch["returns"]
-        old_values = batch["values"]
 
         _, new_log_probs, entropy, new_values = self.net.get_action_and_value(obs, action=actions)
 
@@ -114,8 +113,8 @@ class PPOTrainer:
 
         with torch.no_grad():
             approx_kl = ((old_log_probs - new_log_probs).abs()).mean().item()
-            clip_fraction = (ratio.abs() > 1 + self.config.clip_epsilon).float().mean().item()
-            explained_variance = self._explained_variance(returns, old_values)
+            clip_fraction = ((ratio - 1).abs() > self.config.clip_epsilon).float().mean().item()
+            explained_variance = self._explained_variance(returns, new_values.squeeze(-1))
 
         return {
             "policy_loss": policy_loss.item(),
