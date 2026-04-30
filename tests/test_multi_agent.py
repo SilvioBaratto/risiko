@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from src.agents.base import Agent
 from src.agents.random_agent import RandomAgent
@@ -201,6 +202,16 @@ class CrashingAgent(Agent):
         deterministic: bool = False,
     ) -> dict[str, int]:
         raise RuntimeError("boom")
+
+    def act_with_meta(
+        self,
+        obs: dict[str, np.ndarray],
+        legal_actions: list[dict[str, int]],
+        *,
+        deterministic: bool = False,
+    ) -> tuple[dict[str, int], torch.Tensor, torch.Tensor]:
+        action = self.act(obs, legal_actions, deterministic=deterministic)
+        return action, torch.tensor(float("nan")), torch.tensor(float("nan"))
 
 
 class TestMultiAgentRunnerFallback:

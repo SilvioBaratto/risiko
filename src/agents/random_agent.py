@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
 
 from src.agents.base import Agent
 
@@ -25,6 +26,19 @@ class RandomAgent(Agent):
         self._validate(legal_actions, deterministic)
         idx = int(self._rng.integers(len(legal_actions)))
         return legal_actions[idx]
+
+    def act_with_meta(
+        self,
+        obs: dict[str, np.ndarray],
+        legal_actions: list[dict[str, int]],
+        *,
+        deterministic: bool = False,
+    ) -> tuple[dict[str, int], torch.Tensor, torch.Tensor]:
+        """Select action and return dummy value/logprob tensors."""
+        action = self.act(obs, legal_actions, deterministic=deterministic)
+        value = torch.tensor(float("nan"))
+        logprob = torch.tensor(float("nan"))
+        return action, value, logprob
 
     @staticmethod
     def _validate(legal_actions: list[dict[str, int]], deterministic: bool) -> None:

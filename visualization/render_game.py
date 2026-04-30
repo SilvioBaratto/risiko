@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+import matplotlib.axes
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -140,7 +141,9 @@ def _get_layout() -> dict[int, tuple[float, float]]:
         for src, neighbors in ADJACENCY.items():
             for dst in neighbors:
                 g.add_edge(src, dst)
-        _GRAPH_LAYOUT = nx.spring_layout(g, seed=42, iterations=200)
+        layout = nx.spring_layout(g, seed=42, iterations=200)
+        _GRAPH_LAYOUT = {k: (float(v[0]), float(v[1])) for k, v in layout.items()}
+    assert _GRAPH_LAYOUT is not None
     return _GRAPH_LAYOUT
 
 
