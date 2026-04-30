@@ -35,6 +35,7 @@ class SelfPlayTrainer:
         cfg: TrainingConfig,
         checkpoint_dir: Path = Path("models"),
         log_dir: Path | None = None,
+        max_turns: int = 10_000,
     ) -> None:
         """Initialise trainer, networks, opponent, and logging.
 
@@ -42,11 +43,13 @@ class SelfPlayTrainer:
             cfg: Training hyperparameters.
             checkpoint_dir: Directory for checkpoints.
             log_dir: TensorBoard log directory.
+            max_turns: Maximum turns per self-play episode.
         """
         self._cfg = cfg
         self._device = self._resolve_device(cfg.device)
         self._checkpoint_dir = checkpoint_dir
         self._log_dir = log_dir or self._default_log_dir()
+        self._max_turns = max_turns
         self._rng = set_global_seeds(cfg.seed)
         self._env = RisikoEnv(n_players=2, reward_config=cfg.reward)
         self._trainer, self._agent = self._build_trainer()
@@ -155,7 +158,7 @@ class SelfPlayTrainer:
     def _run_episode(self, buffer: RolloutBuffer) -> GameResult:
         """Play one episode and append learner transitions to *buffer*."""
         agents: list[Agent] = [self._agent, self._opponent_agent]
-        runner = MultiAgentRunner(self._env, agents, max_turns=10_000)
+        runner = MultiAgentRunner(self._env, agents, max_turns=self._max_turns)
         result = runner.run_game(seed=self._cfg.seed + self._episode)
         self._buffer_learner_transitions(result, buffer)
         return result
