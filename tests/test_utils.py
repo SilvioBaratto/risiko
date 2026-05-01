@@ -31,13 +31,13 @@ class TestRewardConfig:
     def test_default_values(self):
         """Defaults must follow the design spec."""
         cfg = RewardConfig()
-        assert cfg.sparse_win == 100.0
-        assert cfg.sparse_loss == -100.0
-        assert cfg.dense_territory_delta == 1.0
-        assert cfg.dense_continent_bonus_delta == 2.0
-        assert cfg.dense_army_ratio == 0.5
-        assert cfg.dense_elimination_bonus == 10.0
-        assert cfg.invalid_action_penalty == -1.0
+        assert cfg.sparse_win == 1.0
+        assert cfg.sparse_loss == -1.0
+        assert cfg.dense_territory_delta == 0.01
+        assert cfg.dense_continent_bonus_delta == 0.05
+        assert cfg.dense_army_ratio == 0.005
+        assert cfg.dense_elimination_bonus == 0.1
+        assert cfg.invalid_action_penalty == -0.01
 
     def test_cannot_mutate_after_creation(self):
         """Frozen dataclass must reject attribute mutation."""
@@ -59,7 +59,7 @@ class TestRewardConfig:
         assert cfg.sparse_win == 200.0
         assert cfg.dense_territory_delta == 0.0
         assert cfg.invalid_action_penalty == -5.0
-        assert cfg.sparse_loss == -100.0  # default preserved
+        assert cfg.sparse_loss == -1.0  # default preserved
 
     def test_total_coefficients_count(self):
         """There must be exactly 7 coefficient fields."""

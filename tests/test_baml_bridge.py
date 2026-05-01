@@ -89,6 +89,16 @@ class TestBuildSnapshot:
         snapshot = build_snapshot(obs, info["legal_actions"])
         assert isinstance(snapshot.turn_capture, bool)
 
+    def test_when_hint_set_snapshot_has_strategy_hint(self, env: RisikoEnv) -> None:
+        obs, info = env.reset(seed=42)
+        snapshot = build_snapshot(obs, info["legal_actions"], strategy_hint="Play greedily.")
+        assert snapshot.strategy_hint == "Play greedily."
+
+    def test_when_hint_none_snapshot_strategy_hint_is_none(self, env: RisikoEnv) -> None:
+        obs, info = env.reset(seed=42)
+        snapshot = build_snapshot(obs, info["legal_actions"])
+        assert snapshot.strategy_hint is None
+
 
 # ------------------------------------------------------------------
 # baml_action_to_dict

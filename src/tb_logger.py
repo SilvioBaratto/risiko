@@ -58,6 +58,17 @@ class TensorBoardLogger:
         self._writer.add_scalar("episode/win", win, episode)
         self._writer.add_scalar("episode/win_rate_100", self._rolling_win_rate(), episode)
 
+        self._writer.add_scalar("episode/length", result.n_turns, episode)
+
+        card_freq = len(result.card_trade_turns) / result.n_turns if result.n_turns > 0 else 0.0
+        self._writer.add_scalar("episode/card_trade_frequency", card_freq, episode)
+
+        if result.territory_history:
+            mean_terr = float(np.mean([t[player_id] for t in result.territory_history]))
+        else:
+            mean_terr = 0.0
+        self._writer.add_scalar("episode/mean_territory", mean_terr, episode)
+
         ratios = self._continent_ratios(result, player_id)
         for name, ratio in ratios.items():
             self._writer.add_scalar(f"continent/{name}", ratio, episode)

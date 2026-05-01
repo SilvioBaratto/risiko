@@ -72,6 +72,8 @@ _ACTION_TYPE_TO_STR = {
 def build_snapshot(
     obs: dict[str, np.ndarray],
     legal_actions: list[dict[str, int]],
+    *,
+    strategy_hint: str | None = None,
 ) -> baml_types.GameStateSnapshot:
     """Convert an env observation into a BAML GameStateSnapshot."""
     phase = _PHASE_MAP.get(int(obs["phase"]), baml_types.Phase.TRADE)
@@ -87,6 +89,7 @@ def build_snapshot(
         eliminated=obs["eliminated"].tolist(),
         continent_control=obs["continent_control"].tolist(),
         legal_actions=_build_legal_actions(legal_actions),
+        strategy_hint=strategy_hint,
     )
 
 

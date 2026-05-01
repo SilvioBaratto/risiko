@@ -51,6 +51,7 @@ class GameStateSnapshot {
   eliminated int[]
   continent_control int[]
   legal_actions LegalAction[]
+  strategy_hint string?
 }
 
 // ------------------------------------------------------------------
@@ -100,6 +101,10 @@ function GenerateRisikoAction(state: GameStateSnapshot) -> RisikoAction {
     Trade count so far: {{ state.trade_count }}
     Reinforcements remaining this phase: {{ state.reinforcements_remaining }}
     Players eliminated: {{ state.eliminated }}
+
+    {% if state.strategy_hint %}
+    STRATEGY: {{ state.strategy_hint }}
+    {% endif %}
 
     Legal actions for the current phase:
     {% for a in state.legal_actions -%}

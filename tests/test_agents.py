@@ -264,7 +264,7 @@ class TestPPOAgent:
         action = agent.act(dummy_obs, legal)
         assert isinstance(action, dict)
         assert set(action.keys()) == {"action_type", "param_a", "param_b", "param_c", "param_d"}
-        assert all(isinstance(v, (int, np.integer)) for v in action.values())
+        assert all(isinstance(v, int | np.integer) for v in action.values())
 
     def test_act_with_meta_returns_tuple(
         self, net: ActorCritic, dummy_obs: dict[str, np.ndarray]
@@ -276,8 +276,8 @@ class TestPPOAgent:
         assert len(result) == 3
         action, log_prob, value = result
         assert isinstance(action, dict)
-        assert isinstance(log_prob, (torch.Tensor, float))
-        assert isinstance(value, (torch.Tensor, float))
+        assert isinstance(log_prob, torch.Tensor | float)
+        assert isinstance(value, torch.Tensor | float)
 
     def test_deterministic_mode_selects_highest_prob(
         self, net: ActorCritic, dummy_obs: dict[str, np.ndarray]

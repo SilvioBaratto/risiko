@@ -252,6 +252,25 @@ class TestMergeCliOverrides:
         assert new_cfg.flag is True
 
 
+class TestRewardConfigDefaults:
+    """RewardConfig defaults match the spec."""
+
+    def test_when_sparse_win_default_is_1(self) -> None:
+        from src.utils.reward_config import RewardConfig
+
+        assert RewardConfig().sparse_win == 1.0
+
+    def test_when_sparse_loss_default_is_minus_1(self) -> None:
+        from src.utils.reward_config import RewardConfig
+
+        assert RewardConfig().sparse_loss == -1.0
+
+    def test_when_dense_territory_delta_is_0_01(self) -> None:
+        from src.utils.reward_config import RewardConfig
+
+        assert RewardConfig().dense_territory_delta == 0.01
+
+
 class TestCliFlags:
     """CLI flag acceptance via the train subcommand."""
 

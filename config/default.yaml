@@ -25,3 +25,21 @@ ppo:
 network:
   hidden_sizes: [256, 256]
   activation: tanh
+
+# Self-play settings
+self_play:
+  opponent_update_freq: 50
+  best_metric: win_rate
+  promote_threshold: 0.55
+  eval_games: 10
+  n_players: 2
+
+# Reward shaping coefficients
+reward:
+  sparse_win: 1.0
+  sparse_loss: -1.0
+  dense_territory_delta: 0.01
+  dense_continent_bonus_delta: 0.05
+  dense_army_ratio: 0.005
+  dense_elimination_bonus: 0.1
+  invalid_action_penalty: -0.01

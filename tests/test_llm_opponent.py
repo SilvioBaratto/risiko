@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from unittest.mock import MagicMock, patch
 
@@ -236,3 +238,239 @@ class TestConfiguration:
         assert agent2._baml is None
         assert agent2._model == agent._model
         assert agent2._timeout == agent._timeout
+
+    def test_when_player_config_set_top_p_top_k_repeat_penalty_are_injected_into_registry(
+        self,
+    ) -> None:
+        """PlayerConfig sampling params are forwarded to the ClientRegistry."""
+        from src.agents.player_config import PlayerConfig
+
+        config = PlayerConfig(
+            player_id=2,
+            temperature=0.7,
+            top_p=0.85,
+            top_k=50,
+            repeat_penalty=1.15,
+            strategy_hint="Eliminate the weakest.",
+        )
+        with patch("src.agents.llm_opponent.ClientRegistry") as mock_registry_cls:
+            mock_reg_instance = mock_registry_cls.return_value
+            with patch("src.agents.llm_opponent.baml_client"):
+                agent = LLMOpponent(player_config=config)
+                _ = agent._baml_client  # trigger lazy init
+        captured_options = mock_reg_instance.add_llm_client.call_args.kwargs["options"]
+        assert captured_options["top_p"] == pytest.approx(0.85)
+        assert captured_options["top_k"] == 50
+        assert captured_options["repeat_penalty"] == pytest.approx(1.15)
+        assert captured_options["temperature"] == pytest.approx(0.7)
+
+    def test_when_player_config_none_scalar_construction_is_unchanged(self) -> None:
+        """Constructing without player_config keeps existing scalar behaviour."""
+        with patch("src.agents.llm_opponent.ClientRegistry") as mock_registry_cls:
+            mock_reg_instance = mock_registry_cls.return_value
+            with patch("src.agents.llm_opponent.baml_client"):
+                agent = LLMOpponent(temperature=0.3)
+                _ = agent._baml_client
+        captured_options = mock_reg_instance.add_llm_client.call_args.kwargs["options"]
+        assert captured_options["temperature"] == pytest.approx(0.3)
+        assert "top_p" not in captured_options
+        assert "top_k" not in captured_options
+        assert "repeat_penalty" not in captured_options
+
+    def test_when_both_player_config_and_scalars_player_config_overrides_temperature(
+        self,
+    ) -> None:
+        """player_config.temperature takes precedence over the scalar kwarg."""
+        from src.agents.player_config import PlayerConfig
+
+        config = PlayerConfig(
+            player_id=0,
+            temperature=0.9,
+            top_p=0.9,
+            top_k=40,
+            repeat_penalty=1.1,
+            strategy_hint="aggressive",
+        )
+        agent = LLMOpponent(temperature=0.1, player_config=config)
+        assert agent._temperature == pytest.approx(0.9)
+
+    def test_when_player_config_set_strategy_hint_is_stored(self) -> None:
+        """strategy_hint from player_config is accessible on the agent."""
+        from src.agents.player_config import PlayerConfig
+
+        config = PlayerConfig(
+            player_id=1,
+            temperature=0.4,
+            top_p=0.9,
+            top_k=40,
+            repeat_penalty=1.1,
+            strategy_hint="Secure continents.",
+        )
+        agent = LLMOpponent(player_config=config)
+        assert agent._strategy_hint == "Secure continents."
+
+    def test_when_player_config_set_accepts_player_config_parameter(self) -> None:
+        """LLMOpponent can be constructed with only player_config, no scalars."""
+        from src.agents.player_config import PlayerConfig
+
+        config = PlayerConfig(
+            player_id=3,
+            temperature=0.3,
+            top_p=0.95,
+            top_k=30,
+            repeat_penalty=1.2,
+            strategy_hint="Fortify borders.",
+        )
+        agent = LLMOpponent(player_config=config)
+        assert agent._player_config is config
+        assert agent._temperature == pytest.approx(0.3)
+        assert agent._model == config.model
+
+
+# ------------------------------------------------------------------
+# Strategy hint propagation
+# ------------------------------------------------------------------
+
+
+class TestStrategyHint:
+    """strategy_hint is forwarded through build_snapshot."""
+
+    def test_when_player_config_with_hint_build_snapshot_receives_hint(
+        self, dummy_obs, dummy_legal
+    ) -> None:
+        import contextlib
+        from unittest.mock import MagicMock, patch
+
+        from src.agents.player_config import PlayerConfig
+
+        config = PlayerConfig(
+            player_id=0,
+            temperature=0.1,
+            top_p=0.9,
+            top_k=40,
+            repeat_penalty=1.1,
+            strategy_hint="Play greedily.",
+        )
+        agent = LLMOpponent(player_config=config)
+        with patch("src.agents.llm_opponent.build_snapshot") as mock_bs:
+            mock_snapshot = MagicMock()
+            mock_bs.return_value = mock_snapshot
+            with (
+                patch.object(agent, "_call_with_timeout", side_effect=RuntimeError("stop")),
+                contextlib.suppress(Exception),
+            ):
+                agent.act(dummy_obs, dummy_legal)
+        mock_bs.assert_called_once_with(dummy_obs, dummy_legal, strategy_hint="Play greedily.")
+
+
+# ------------------------------------------------------------------
+# Eviction
+# ------------------------------------------------------------------
+
+
+class TestEviction:
+    """evict is called on every LLM action path."""
+
+    def test_when_act_succeeds_evict_is_called(
+        self, agent: LLMOpponent, dummy_obs, dummy_legal
+    ) -> None:
+        first = dummy_legal[0]
+        baml_action = baml_types.RisikoAction(
+            action_type=_action_type_to_str(first["action_type"]),
+            param_a=first["param_a"],
+            param_b=first["param_b"],
+            param_c=first["param_c"],
+            param_d=first["param_d"],
+        )
+        with (
+            patch.object(agent, "_call_with_timeout", return_value=baml_action),
+            patch("src.agents.llm_opponent.evict") as mock_evict,
+        ):
+            agent.act(dummy_obs, dummy_legal)
+        mock_evict.assert_called_once()
+
+    def test_when_timeout_evict_is_called(self, agent: LLMOpponent, dummy_obs, dummy_legal) -> None:
+        with (
+            patch.object(agent, "_call_with_timeout", side_effect=FuturesTimeoutError),
+            patch("src.agents.llm_opponent.evict") as mock_evict,
+        ):
+            agent.act(dummy_obs, dummy_legal)
+        mock_evict.assert_called_once()
+
+    def test_when_baml_error_evict_is_called(
+        self, agent: LLMOpponent, dummy_obs, dummy_legal
+    ) -> None:
+        from baml_py.baml_py import BamlClientError
+
+        with (
+            patch.object(agent, "_call_with_timeout", side_effect=BamlClientError("fail")),
+            patch("src.agents.llm_opponent.evict") as mock_evict,
+        ):
+            agent.act(dummy_obs, dummy_legal)
+        mock_evict.assert_called_once()
+
+    def test_when_generic_exception_evict_is_called(
+        self, agent: LLMOpponent, dummy_obs, dummy_legal
+    ) -> None:
+        with (
+            patch.object(agent, "_call_with_timeout", side_effect=RuntimeError("boom")),
+            patch("src.agents.llm_opponent.evict") as mock_evict,
+        ):
+            agent.act(dummy_obs, dummy_legal)
+        mock_evict.assert_called_once()
+
+    def test_when_illegal_action_evict_is_called(
+        self, agent: LLMOpponent, dummy_obs, dummy_legal
+    ) -> None:
+        illegal = baml_types.RisikoAction(
+            action_type="attack", param_a=99, param_b=99, param_c=99, param_d=99
+        )
+        with (
+            patch.object(agent, "_call_with_timeout", return_value=illegal),
+            patch("src.agents.llm_opponent.evict") as mock_evict,
+        ):
+            agent.act(dummy_obs, dummy_legal)
+        mock_evict.assert_called_once()
+
+
+# ------------------------------------------------------------------
+# Serialisation
+# ------------------------------------------------------------------
+
+
+class TestSerialisation:
+    """OLLAMA_LOCK serialises concurrent BAML calls across LLMOpponent instances."""
+
+    def test_when_two_opponents_act_concurrently_baml_calls_are_serialised(
+        self, dummy_obs, dummy_legal
+    ) -> None:
+        order: list[str] = []
+
+        def slow_generate(snapshot: object) -> baml_types.RisikoAction:
+            order.append("start")
+            time.sleep(0.05)
+            order.append("end")
+            return baml_types.RisikoAction(
+                action_type="skip", param_a=0, param_b=0, param_c=0, param_d=0
+            )
+
+        agent1 = LLMOpponent()
+        agent2 = LLMOpponent()
+        mock_baml1 = MagicMock()
+        mock_baml1.GenerateRisikoAction = slow_generate
+        mock_baml2 = MagicMock()
+        mock_baml2.GenerateRisikoAction = slow_generate
+
+        with (
+            patch.object(agent1, "_baml", mock_baml1),
+            patch.object(agent2, "_baml", mock_baml2),
+            patch("src.agents.llm_opponent.evict"),
+        ):
+            t1 = threading.Thread(target=agent1.act, args=(dummy_obs, dummy_legal))
+            t2 = threading.Thread(target=agent2.act, args=(dummy_obs, dummy_legal))
+            t1.start()
+            t2.start()
+            t1.join(timeout=10)
+            t2.join(timeout=10)
+
+        assert order == ["start", "end", "start", "end"], f"Expected serialised calls, got: {order}"

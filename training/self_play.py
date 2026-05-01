@@ -12,6 +12,7 @@ import torch
 
 from src.agents.base import Agent
 from src.agents.ppo_agent import PPOAgent
+from src.agents.random_agent import RandomAgent
 from src.config import TrainingConfig
 from src.env import RisikoEnv
 from src.models.actor_critic import ActorCritic
@@ -51,7 +52,7 @@ class SelfPlayTrainer:
         self._log_dir = log_dir or self._default_log_dir()
         self._max_turns = max_turns
         self._rng = set_global_seeds(cfg.seed)
-        self._env = RisikoEnv(n_players=2, reward_config=cfg.reward)
+        self._env = RisikoEnv(n_players=cfg.self_play.n_players, reward_config=cfg.reward)
         self._trainer, self._agent = self._build_trainer()
         self._opponent_net = self._build_opponent_net()
         self._opponent_agent = self._build_opponent_agent()
@@ -155,9 +156,22 @@ class SelfPlayTrainer:
     def _set_rollout_seed(self) -> None:
         set_global_seeds(self._cfg.seed + self._episode)
 
+    def _build_agents(self) -> list[Agent]:
+        """Return the ordered agent list for a self-play episode.
+
+        Slots 0 and 1 are the learner and frozen opponent respectively.
+        Any additional slots (up to ``cfg.self_play.n_players``) are filled
+        with independent ``RandomAgent`` instances so the env always receives
+        exactly ``n_players`` agents.
+        """
+        agents: list[Agent] = [self._agent, self._opponent_agent]
+        n_filler = self._cfg.self_play.n_players - 2
+        agents += [RandomAgent() for _ in range(n_filler)]
+        return agents
+
     def _run_episode(self, buffer: RolloutBuffer) -> GameResult:
         """Play one episode and append learner transitions to *buffer*."""
-        agents: list[Agent] = [self._agent, self._opponent_agent]
+        agents = self._build_agents()
         runner = MultiAgentRunner(self._env, agents, max_turns=self._max_turns)
         result = runner.run_game(seed=self._cfg.seed + self._episode)
         self._buffer_learner_transitions(result, buffer)

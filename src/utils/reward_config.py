@@ -13,14 +13,16 @@ from dataclasses import dataclass
 class RewardConfig:
     """Immutable reward-shaping coefficients.
 
-    All dense coefficients default to 1.0 so that setting any
-    field to 0.0 effectively disables that signal.
+    Sparse signals are normalised to ±1 so gradient magnitudes stay
+    comparable across experiments. Dense coefficients are kept small
+    (order 1e-2 or less) to avoid overwhelming the sparse signal.
+    Setting any field to 0.0 effectively disables that component.
     """
 
-    sparse_win: float = 100.0
-    sparse_loss: float = -100.0
-    dense_territory_delta: float = 1.0
-    dense_continent_bonus_delta: float = 2.0
-    dense_army_ratio: float = 0.5
-    dense_elimination_bonus: float = 10.0
-    invalid_action_penalty: float = -1.0
+    sparse_win: float = 1.0
+    sparse_loss: float = -1.0
+    dense_territory_delta: float = 0.01
+    dense_continent_bonus_delta: float = 0.05
+    dense_army_ratio: float = 0.005
+    dense_elimination_bonus: float = 0.1
+    invalid_action_penalty: float = -0.01

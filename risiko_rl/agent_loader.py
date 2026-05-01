@@ -8,6 +8,7 @@ from typing import Any
 import torch
 
 from src.agents.llm_opponent import LLMOpponent
+from src.agents.player_config import load_profiles_from_yaml
 from src.agents.ppo_agent import PPOAgent
 from src.agents.random_agent import RandomAgent
 from src.models.actor_critic import ActorCritic
@@ -55,3 +56,16 @@ def load_agent(spec: str, *, seed: int | None = None) -> Any:
     net.load_state_dict(checkpoint["trainer_state"]["model"])
     device = config.get("device", "cpu")
     return PPOAgent(net, device=device)
+
+
+def load_llm_pool(path: Path) -> list[LLMOpponent]:
+    """Load one LLMOpponent per PlayerConfig in *path*.
+
+    Args:
+        path: YAML file containing a list of player profile dicts.
+
+    Returns:
+        One ``LLMOpponent`` per profile, in profile order.
+    """
+    profiles = load_profiles_from_yaml(path)
+    return [LLMOpponent(player_config=pc) for pc in profiles]

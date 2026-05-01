@@ -98,9 +98,9 @@ class TestEnvInterface:
         assert len(result) == 5
         obs, reward, terminated, truncated, info = result
         assert isinstance(obs, dict)
-        assert isinstance(reward, (int, float, np.floating))
-        assert isinstance(terminated, (bool, np.bool_))
-        assert isinstance(truncated, (bool, np.bool_))
+        assert isinstance(reward, int | float | np.floating)
+        assert isinstance(terminated, bool | np.bool_)
+        assert isinstance(truncated, bool | np.bool_)
         assert isinstance(info, dict)
 
 

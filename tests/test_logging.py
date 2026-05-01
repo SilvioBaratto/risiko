@@ -289,3 +289,68 @@ class TestContinentControl:
         for name in ["North America", "South America", "Europe", "Africa", "Asia", "Australia"]:
             values = _read_scalars(log_dir, f"continent/{name}")
             assert len(values) == 1
+
+
+class TestEpisodeMetrics:
+    """New per-episode scalars: length, card-trade frequency, mean territory."""
+
+    def _make_result(
+        self,
+        n_turns: int = 4,
+        card_trade_turns: list[int] | None = None,
+        territory_history: list[np.ndarray] | None = None,
+    ) -> GameResult:
+        if card_trade_turns is None:
+            card_trade_turns = []
+        if territory_history is None:
+            territory_history = [np.array([20, 22]) for _ in range(n_turns)]
+        return GameResult(
+            winner=0,
+            n_turns=n_turns,
+            territory_history=territory_history,
+            elimination_order=[],
+            card_trade_turns=card_trade_turns,
+            action_log=[],
+            trajectories=[],
+        )
+
+    def test_when_n_turns_5_logs_length_5(self, log_dir: Path) -> None:
+        logger = TensorBoardLogger(log_dir)
+        result = self._make_result(n_turns=5)
+        logger.log_game_result(result, player_id=0, episode=1)
+        _close_and_wait(logger)
+        values = _read_scalars(log_dir, "episode/length")
+        assert values[0] == (1, pytest.approx(5.0))
+
+    def test_when_two_trades_in_4_turns_logs_frequency_0_5(self, log_dir: Path) -> None:
+        logger = TensorBoardLogger(log_dir)
+        result = self._make_result(n_turns=4, card_trade_turns=[1, 3])
+        logger.log_game_result(result, player_id=0, episode=2)
+        _close_and_wait(logger)
+        values = _read_scalars(log_dir, "episode/card_trade_frequency")
+        assert values[0] == (2, pytest.approx(0.5))
+
+    def test_when_n_turns_is_0_card_trade_frequency_is_0(self, log_dir: Path) -> None:
+        logger = TensorBoardLogger(log_dir)
+        result = self._make_result(n_turns=0, card_trade_turns=[], territory_history=[])
+        logger.log_game_result(result, player_id=0, episode=3)
+        _close_and_wait(logger)
+        values = _read_scalars(log_dir, "episode/card_trade_frequency")
+        assert values[0] == (3, pytest.approx(0.0))
+
+    def test_when_territory_history_logs_mean_territory(self, log_dir: Path) -> None:
+        logger = TensorBoardLogger(log_dir)
+        history = [np.array([10, 32]), np.array([12, 30]), np.array([14, 28])]
+        result = self._make_result(n_turns=3, territory_history=history)
+        logger.log_game_result(result, player_id=0, episode=4)
+        _close_and_wait(logger)
+        values = _read_scalars(log_dir, "episode/mean_territory")
+        assert values[0] == (4, pytest.approx(12.0))
+
+    def test_when_territory_history_empty_mean_territory_is_0(self, log_dir: Path) -> None:
+        logger = TensorBoardLogger(log_dir)
+        result = self._make_result(n_turns=0, territory_history=[])
+        logger.log_game_result(result, player_id=0, episode=5)
+        _close_and_wait(logger)
+        values = _read_scalars(log_dir, "episode/mean_territory")
+        assert values[0] == (5, pytest.approx(0.0))

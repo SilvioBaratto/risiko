@@ -316,10 +316,61 @@ class TestSelfPlayConfigFields:
 
     def test_reward_config_in_training_config(self) -> None:
         cfg = TrainingConfig()
-        assert cfg.reward.sparse_win == 100.0
-        assert cfg.reward.sparse_loss == -100.0
+        assert cfg.reward.sparse_win == 1.0
+        assert cfg.reward.sparse_loss == -1.0
 
     def test_training_config_is_frozen(self) -> None:
         cfg = TrainingConfig()
         with pytest.raises(FrozenInstanceError):
             cfg.seed = 123  # type: ignore[misc]
+
+
+# ------------------------------------------------------------------
+# n_players configurability
+# ------------------------------------------------------------------
+
+
+class TestNPlayersConfig:
+    """SelfPlayConfig.n_players is wired to the environment and agent list."""
+
+    def test_when_default_n_players_is_2(self) -> None:
+        assert SelfPlayConfig().n_players == 2
+
+    def test_when_n_players_4_env_has_4_players(self) -> None:
+        cfg = TrainingConfig(
+            total_timesteps=1,
+            save_freq=0,
+            eval_freq=0,
+            device="cpu",
+            ppo=PPOConfig(n_steps=32, n_epochs=1, batch_size=8),
+            self_play=SelfPlayConfig(n_players=4, opponent_update_freq=100, promote_threshold=1.0),
+        )
+        trainer = SelfPlayTrainer(cfg, max_turns=5)
+        assert trainer._env.n_players == 4
+
+    def test_when_n_players_4_run_episode_uses_4_agents(self) -> None:
+        cfg = TrainingConfig(
+            total_timesteps=1,
+            save_freq=0,
+            eval_freq=0,
+            device="cpu",
+            ppo=PPOConfig(n_steps=32, n_epochs=1, batch_size=8),
+            self_play=SelfPlayConfig(n_players=4, opponent_update_freq=100, promote_threshold=1.0),
+        )
+        trainer = SelfPlayTrainer(cfg, max_turns=5)
+        captured: list[int] = []
+
+        def _patched_run_episode(buffer):  # type: ignore[override]
+            from src.multi_agent import MultiAgentRunner
+
+            agents = trainer._build_agents()
+            captured.append(len(agents))
+            runner = MultiAgentRunner(trainer._env, agents, max_turns=5)
+            result = runner.run_game(seed=cfg.seed)
+            trainer._buffer_learner_transitions(result, buffer)
+            return result
+
+        trainer._run_episode = _patched_run_episode  # type: ignore[method-assign]
+        buffer = trainer._make_buffer()
+        trainer._run_episode(buffer)
+        assert captured[0] == 4

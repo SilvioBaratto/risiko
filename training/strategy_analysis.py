@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Sequence
 from typing import Any
 
@@ -37,6 +37,18 @@ def _phase_for_turn(turn: int, total_turns: int) -> str:
     if ratio < 2 / 3:
         return "mid"
     return "late"
+
+
+def _counter_to_bucket(counter: Counter[str]) -> dict[str, int | float]:
+    """Convert a distance Counter to {dist_str: count, 'mean': float, 'total': int}."""
+    total = sum(counter.values())
+    if total == 0:
+        return {"mean": 0.0, "total": 0}
+    mean = sum(int(k) * v for k, v in counter.items()) / total
+    result: dict[str, int | float] = dict(counter)
+    result["mean"] = mean
+    result["total"] = total
+    return result
 
 
 class StrategyAnalyzer:
@@ -183,12 +195,36 @@ class StrategyAnalyzer:
             "avg_fortify_distance": avg_distance,
         }
 
+    def attack_distance_distribution(self) -> dict[str, dict[str, int | float]]:
+        """Return BFS attack-distance counts and mean, bucketed by game phase."""
+        phase_counters: dict[str, Counter[str]] = {
+            "early": Counter(),
+            "mid": Counter(),
+            "late": Counter(),
+            "all": Counter(),
+        }
+        for game in self._game_results:
+            total_len = len(game.action_log)
+            for i, action in enumerate(game.action_log):
+                if action.get("player") != self._learner_id:
+                    continue
+                if action.get("action_type") != 2:
+                    continue
+                dist = _bfs_distance(action.get("param_a", -1), action.get("param_b", -1))
+                if dist <= 0:
+                    continue
+                phase = _phase_for_turn(i, total_len)
+                phase_counters[phase][str(dist)] += 1
+                phase_counters["all"][str(dist)] += 1
+        return {phase: _counter_to_bucket(counter) for phase, counter in phase_counters.items()}
+
     def report(self) -> dict[str, Any]:
         """Return a flat, JSON-serializable dict with all heuristics."""
         continents = self.continent_priority()
         attacks = self.attack_aggressiveness()
         trades = self.card_trade_timing()
         fortifies = self.fortification_patterns()
+        attack_dist = self.attack_distance_distribution()
 
         report: dict[str, Any] = {}
         for name, data in continents.items():
@@ -201,4 +237,8 @@ class StrategyAnalyzer:
         report.update(attacks)
         report.update(trades)
         report.update(fortifies)
+        report["attack_dist_early_mean"] = attack_dist["early"]["mean"]
+        report["attack_dist_mid_mean"] = attack_dist["mid"]["mean"]
+        report["attack_dist_late_mean"] = attack_dist["late"]["mean"]
+        report["attack_dist_all_mean"] = attack_dist["all"]["mean"]
         return report

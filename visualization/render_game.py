@@ -1,4 +1,4 @@
-"""Board renderer and replay exporter for Risiko games."""
+"""ASCII, matplotlib, and PIL animated-GIF renderer for Risiko game replays."""
 
 from __future__ import annotations
 

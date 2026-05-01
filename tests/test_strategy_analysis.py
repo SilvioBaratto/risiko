@@ -319,3 +319,74 @@ class TestReport:
         report = analyzer.report()
         assert "avg_attacks_per_turn" in report
         assert report["avg_attacks_per_turn"] == pytest.approx(2 / 12)
+
+
+# ------------------------------------------------------------------
+# Attack distance distribution
+# ------------------------------------------------------------------
+
+
+class TestAttackDistanceDistribution:
+    """BFS attack-distance distribution per game phase."""
+
+    def test_when_adjacent_attack_distance_1_in_all_bucket(self, simple_result: GameResult) -> None:
+        analyzer = StrategyAnalyzer([simple_result])
+        dist = analyzer.attack_distance_distribution()
+        assert dist["all"].get("1") == 1
+
+    def test_when_adjacent_attack_all_mean_is_1(self, simple_result: GameResult) -> None:
+        analyzer = StrategyAnalyzer([simple_result])
+        dist = analyzer.attack_distance_distribution()
+        assert dist["all"]["mean"] == pytest.approx(1.0)
+
+    def test_when_adjacent_attack_all_total_is_1(self, simple_result: GameResult) -> None:
+        analyzer = StrategyAnalyzer([simple_result])
+        dist = analyzer.attack_distance_distribution()
+        assert dist["all"]["total"] == 1
+
+    def test_when_multiple_attacks_all_mean_is_correct(
+        self, multi_game_results: list[GameResult]
+    ) -> None:
+        analyzer = StrategyAnalyzer(multi_game_results)
+        dist = analyzer.attack_distance_distribution()
+        # g1: Venezuela(12)->Brazil(10) dist=1, g2: EAustralia(38)->Indonesia(39) dist=2
+        assert dist["all"]["mean"] == pytest.approx(1.5)
+
+    def test_when_multiple_attacks_all_total_is_2(
+        self, multi_game_results: list[GameResult]
+    ) -> None:
+        analyzer = StrategyAnalyzer(multi_game_results)
+        dist = analyzer.attack_distance_distribution()
+        assert dist["all"]["total"] == 2
+
+    def test_when_no_attacks_total_is_zero(self, no_learner_actions_result: GameResult) -> None:
+        analyzer = StrategyAnalyzer([no_learner_actions_result])
+        dist = analyzer.attack_distance_distribution()
+        assert dist["all"]["total"] == 0
+        assert dist["all"]["mean"] == pytest.approx(0.0)
+
+    def test_when_no_attacks_all_phase_keys_present(
+        self, no_learner_actions_result: GameResult
+    ) -> None:
+        analyzer = StrategyAnalyzer([no_learner_actions_result])
+        dist = analyzer.attack_distance_distribution()
+        assert set(dist.keys()) == {"early", "mid", "late", "all"}
+
+    def test_when_early_attack_falls_in_early_bucket(self, simple_result: GameResult) -> None:
+        analyzer = StrategyAnalyzer([simple_result])
+        dist = analyzer.attack_distance_distribution()
+        # Attack at action_log index 5 out of 22 entries → early phase
+        assert dist["early"]["total"] == 1
+
+    def test_when_report_includes_attack_dist_mean_keys(self, simple_result: GameResult) -> None:
+        analyzer = StrategyAnalyzer([simple_result])
+        report = analyzer.report()
+        assert "attack_dist_early_mean" in report
+        assert "attack_dist_mid_mean" in report
+        assert "attack_dist_late_mean" in report
+        assert "attack_dist_all_mean" in report
+
+    def test_when_report_attack_dist_all_mean_is_correct(self, simple_result: GameResult) -> None:
+        analyzer = StrategyAnalyzer([simple_result])
+        report = analyzer.report()
+        assert report["attack_dist_all_mean"] == pytest.approx(1.0)

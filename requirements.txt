@@ -26,4 +26,4 @@ ruff>=0.15.12
 baml-py>=0.222.0
 
 # Viz
-playwright>=1.59.0
+Pillow>=10.0.0

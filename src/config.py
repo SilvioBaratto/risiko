@@ -51,6 +51,7 @@ class SelfPlayConfig:
     best_metric: str = "win_rate"
     promote_threshold: float = 0.55
     eval_games: int = 10
+    n_players: int = 2
 
 
 @dataclass(frozen=True)
