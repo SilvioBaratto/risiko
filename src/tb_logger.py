@@ -86,9 +86,9 @@ class TensorBoardLogger:
     def _compute_reward(self, result: GameResult, player_id: int) -> float:
         """Sum rewards for *player_id* across trajectories."""
         total = 0.0
-        for i, (_obs, _action, reward) in enumerate(result.trajectories):
+        for i, t in enumerate(result.trajectories):
             if i < len(result.action_log) and result.action_log[i]["player"] == player_id:
-                total += reward
+                total += t.reward
         return total
 
     def _compute_win(self, result: GameResult, player_id: int) -> int:
@@ -105,7 +105,7 @@ class TensorBoardLogger:
         """Compute per-continent control ratios for *player_id*."""
         if not result.trajectories:
             return dict.fromkeys(CONTINENTS, 0.0)
-        last_obs = result.trajectories[-1][0]
+        last_obs = result.trajectories[-1].obs
         owner = last_obs.get("territory_owner", np.zeros(42, dtype=np.int32))
         return {name: self._ratio(owner, player_id, tids) for name, tids in CONTINENTS.items()}
 

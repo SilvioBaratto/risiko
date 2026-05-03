@@ -12,16 +12,8 @@ from src.agents.llm_opponent import LLMOpponent
 runner = CliRunner()
 
 
-def _fake_call(self, snapshot):
-    from baml_client import types as baml_types
-
-    return baml_types.RisikoAction(
-        action_type="skip",
-        param_a=0,
-        param_b=0,
-        param_c=0,
-        param_d=0,
-    )
+def _fake_call(self, obs, legal_actions):
+    return 0
 
 
 class TestBenchmarkCommand:

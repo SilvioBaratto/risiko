@@ -2,7 +2,7 @@
 
 **Research question:** What is the best strategy to win at Risiko (Risk)?
 
-This project trains a PPO agent to discover optimal Risiko strategy purely through self-play and games against a locally-running Qwen LLM opponent. All training and inference run fully offline.
+This project trains a PPO agent to discover optimal Risiko strategy purely through self-play and games against a locally-running Gemma 4 LLM opponent. All training and inference run fully offline.
 
 ---
 
@@ -12,23 +12,23 @@ This project trains a PPO agent to discover optimal Risiko strategy purely throu
 uv pip install -r requirements.txt
 ```
 
-Python 3.12+ required. PyTorch, BAML, and all dependencies are pinned in `requirements.txt`.
+Python 3.12+ required. PyTorch and all dependencies are pinned in `requirements.txt`.
 
 ---
 
 ## Ollama setup
 
-The LLM opponent uses a custom Ollama model built from Qwen 3.5.
+The LLM opponent uses a custom Ollama model built from Gemma 4.
 
 ```bash
 # Pull the base model
-ollama pull qwen3.5:latest
+ollama pull gemma4:latest
 
 # Build the risiko model with the project Modelfile
 ollama create risiko -f Modelfile
 ```
 
-The `Modelfile` sets a JSON-only system prompt, 8192-token context, and a repeat penalty tuned for rule-following output.
+The `Modelfile` sets a short JSON-only system prompt, 8192-token context, and `num_predict 256` tuned for the small action-index response. The LLM is called via Ollama's native `/api/chat` endpoint with `think: false` and a JSON-schema enforced output.
 
 ---
 
@@ -36,22 +36,11 @@ The `Modelfile` sets a JSON-only system prompt, 8192-token context, and a repeat
 
 | Variable | Value | Purpose |
 |---|---|---|
-| `OLLAMA_KEEP_ALIVE` | `0` | Evict model from GPU RAM after every call |
-| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Override Ollama endpoint (optional) |
+| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Override Ollama endpoint (optional). The native client strips `/v1` automatically. |
 
-### Why `OLLAMA_KEEP_ALIVE=0`
+### Model eviction
 
-The BAML client accesses Ollama through the OpenAI-compatible `/v1/chat/completions` endpoint. Ollama **silently ignores** the per-call `keep_alive` parameter on this endpoint — it only works on the native `/api/generate` and `/api/chat` endpoints. Setting `OLLAMA_KEEP_ALIVE=0` at the server level ensures the model is evicted from GPU RAM after each call regardless of which endpoint is used.
-
-The code also implements a second eviction layer: after every BAML response, `src/agents/ollama_eviction.py` fires a non-blocking POST to `http://localhost:11434/api/generate` with `{"keep_alive": 0}`. Both layers are required.
-
-Start Ollama with the variable set:
-
-```bash
-OLLAMA_KEEP_ALIVE=0 ollama serve
-```
-
-Or export it in your shell profile before running any training command.
+`LLMOpponent` accepts `evict_after_call: bool = False`. When `True`, it sends `keep_alive=0` to Ollama after each call, freeing GPU RAM at the cost of a ~10 s cold-start on the next call. **Default is off** because training fires hundreds of LLM calls per episode and reloading the model each time is impractical. Enable eviction only for one-off CLI runs (`evaluate`, `watch`) where freeing memory matters more than per-call latency.
 
 ---
 
@@ -60,7 +49,8 @@ Or export it in your shell profile before running any training command.
 | File | Purpose |
 |---|---|
 | `config/default.yaml` | PPO hyperparameters, network shape, self-play settings, reward coefficients |
-| `configs/default_6p.yaml` | Per-player LLM sampling profiles for 6-player games |
+| `config/default_6p.yaml` | Per-player LLM sampling profiles for 6-player games |
+| `config/llm_6p.yaml` | 6-player training: PPO learner vs 5 LLM opponents |
 
 Key defaults in `config/default.yaml`:
 
@@ -144,7 +134,7 @@ risiko-rl benchmark --games 100 --rl-checkpoint models/best.pt --output baseline
 ## TensorBoard
 
 ```bash
-tensorboard --logdir runs/
+tensorboard --logdir results/runs/
 ```
 
 Logged per episode: `episode/reward`, `episode/win`, `episode/win_rate_100`, `episode/length`, `episode/card_trade_frequency`, `episode/mean_territory`, `continent/*`, `train/policy_loss`, `train/value_loss`, `train/entropy_loss`.
@@ -158,14 +148,14 @@ Win rates at 6 players (random baseline ≈ 1/6 ≈ 16.7%):
 | Agent | Win rate | Notes |
 |---|---|---|
 | Random | ≈ 16% | Uniform action sampling |
-| Qwen LLM (`risiko` model) | ≈ 25–35% | Zero-shot tactical reasoning |
+| LLM (`risiko` model) | ≈ 25–35% | Zero-shot tactical reasoning |
 | PPO (target) | > 35% | Self-play + LLM curriculum |
 
 ---
 
 ## Six-player LLM profiles
 
-Defined in `configs/default_6p.yaml`. Each slot uses the shared `risiko` Ollama model with different sampling parameters and a strategy hint injected into the prompt.
+Defined in `config/default_6p.yaml`. Each slot uses the shared `risiko` Ollama model with different sampling parameters and a strategy hint injected into the prompt.
 
 | Player | Temp | Top-p | Top-k | Repeat penalty | Strategy hint |
 |---|---|---|---|---|---|
@@ -175,18 +165,6 @@ Defined in `configs/default_6p.yaml`. Each slot uses the shared `risiko` Ollama 
 | 3 | 0.3 | 0.95 | 30 | 1.20 | Fortify borders and expand only when safe. |
 | 4 | 0.9 | 0.80 | 60 | 1.05 | Play unpredictably; avoid predictable attack patterns. |
 | 5 | 0.5 | 0.90 | 40 | 1.10 | Balance attack and defence; trade cards conservatively. |
-
----
-
-## BAML
-
-LLM function definitions live in `baml_src/`. After editing any `.baml` file, regenerate the client:
-
-```bash
-baml-cli generate
-```
-
-Never edit `baml_client/` directly — it is auto-generated.
 
 ---
 

@@ -74,6 +74,18 @@ def _fill_buffer_with_obs(
             "n_players": np.int32(3),
             "eliminated": np.zeros(6, dtype=np.int32),
         }
+        # Build a small legal_actions set that includes the sampled action
+        # plus a few alternatives. Singleton legal_actions would collapse the
+        # masked distribution to a dirac → zero entropy → tests for
+        # non-zero entropy_loss would fail trivially.
+        sampled = {k: int(v.item()) for k, v in action.items()}
+        legal = [sampled]
+        for offset in (1, 2):
+            alt = {
+                k: (sampled[k] + offset) % net.action_dims[k]
+                for k in net.action_dims
+            }
+            legal.append(alt)
         buf.add(
             state=state,
             action=action,
@@ -81,6 +93,7 @@ def _fill_buffer_with_obs(
             done=False,
             value=value.item(),
             log_prob=log_prob.item(),
+            legal_actions=legal,
         )
 
 

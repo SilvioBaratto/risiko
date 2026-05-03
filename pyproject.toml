@@ -34,7 +34,7 @@ dependencies = [
     "rich>=15.0.0",
     "typer>=0.15.0",
     "pyyaml>=6.0",
-    "baml-py>=0.80.0",
+    "httpx>=0.28.0",
 ]
 
 [project.optional-dependencies]
@@ -117,5 +117,4 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.pyright]
-exclude = ["baml_client"]
 reportPrivateImportUsage = "none"

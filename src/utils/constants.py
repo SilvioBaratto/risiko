@@ -166,10 +166,16 @@ def territory_to_continent(territory_id: int) -> str | None:
     return _TERRITORY_TO_CONTINENT.get(territory_id)
 
 
+# Maximum army count expressible in a single action parameter.
+# param_a/b/c double as territory indices (0-41) and army counts; this cap
+# prevents out-of-bounds indexing into the action-mask tensors for games
+# where a territory accumulates more armies than NUM_TERRITORIES.
+MAX_ARMIES_PARAM = 200
+
 ACTION_DIMS: dict[str, int] = {
     "action_type": 6,
-    "param_a": 42,
-    "param_b": 42,
-    "param_c": 43,
-    "param_d": 43,
+    "param_a": MAX_ARMIES_PARAM + 1,  # territory (0-41) or armies (1-200)
+    "param_b": MAX_ARMIES_PARAM + 1,  # territory (0-41) or reinforce count (1-200)
+    "param_c": MAX_ARMIES_PARAM + 1,  # dice/card index (0-4) or fortify count (1-200)
+    "param_d": 1,  # always 0 (unused)
 }

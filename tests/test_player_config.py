@@ -163,7 +163,7 @@ class TestLoadProfilesFromYaml:
     """YAML loader validation and error handling."""
 
     def test_when_loading_default_yaml_round_trips_to_six_profiles(self, tmp_path: Path) -> None:
-        yaml_path = Path("/Volumes/External SSD/risiko/configs/default_6p.yaml")
+        yaml_path = Path("/Volumes/External SSD/risiko/config/default_6p.yaml")
         profiles = load_profiles_from_yaml(yaml_path)
         assert profiles == list(DEFAULT_6P_PROFILES)
 

@@ -373,21 +373,13 @@ class TestLLMOpponentProtocolConformance:
     def test_act_with_meta_returns_tuple(self) -> None:
         from unittest.mock import patch
 
-        from baml_client import types as baml_types
         from src.env import RisikoEnv
 
         agent = LLMOpponent()
         env = RisikoEnv(n_players=3)
         obs, info = env.reset(seed=42)
         legal = info["legal_actions"]
-        with patch.object(agent, "_call_with_timeout") as mock_call:
-            mock_call.return_value = baml_types.RisikoAction(
-                action_type="skip",
-                param_a=0,
-                param_b=0,
-                param_c=0,
-                param_d=0,
-            )
+        with patch.object(agent, "_call_with_timeout", return_value=0):
             action, log_prob, value = agent.act_with_meta(obs, legal)
         assert isinstance(action, dict)
         assert isinstance(log_prob, torch.Tensor)

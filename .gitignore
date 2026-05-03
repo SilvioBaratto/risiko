@@ -208,6 +208,7 @@ __marimo__/
 
 # Project specific
 CLAUDE.md
+results/runs/
 visualization/frames/
 # optional: commit for shared extraction speed, skip to keep repo small
 graphify-out/cache/
@@ -218,5 +219,6 @@ graphify-out/manifest.json
 # local token tracking, not useful to share
 graphify-out/cost.json
 
-baml_client/
+.vscode/
+.playwright-mcp/
 .code-generator/

@@ -11,6 +11,9 @@ from src.config import PPOConfig
 from src.models.actor_critic import ActorCritic
 from src.models.replay_buffer import RolloutBuffer
 from src.models.utils import flatten_obs
+from src.utils.log import get_logger
+
+_log = get_logger("ppo")
 
 
 class PPOTrainer:
@@ -59,7 +62,10 @@ class PPOTrainer:
         }
 
         for _epoch in range(self.config.n_epochs):
-            for batch in buffer.get(batch_size=self.config.batch_size):
+            for batch in buffer.get(
+                batch_size=self.config.batch_size,
+                action_dims=self.net.action_dims,
+            ):
                 batch_metrics = self._update_step(batch)
                 for key in metrics:
                     metrics[key] += batch_metrics[key]
@@ -84,10 +90,35 @@ class PPOTrainer:
         old_log_probs = batch["log_probs"]
         advantages = batch["advantages"]
         returns = batch["returns"]
+        # Apply the same per-head masks used at sampling time so new_log_prob
+        # is comparable to the stored old_log_prob.
+        action_masks = batch.get("action_masks")
 
-        _, new_log_probs, entropy, new_values = self.net.get_action_and_value(obs, action=actions)
+        _, new_log_probs, entropy, new_values = self.net.get_action_and_value(
+            obs, action=actions, action_masks=action_masks,
+        )
+
+        _log.debug(
+            "log_probs old(min/max/mean)=%.3f/%.3f/%.3f "
+            "new(min/max/mean)=%.3f/%.3f/%.3f adv(min/max)=%.3f/%.3f",
+            old_log_probs.min().item(),
+            old_log_probs.max().item(),
+            old_log_probs.mean().item(),
+            new_log_probs.min().item(),
+            new_log_probs.max().item(),
+            new_log_probs.mean().item(),
+            advantages.min().item(),
+            advantages.max().item(),
+        )
 
         ratio = torch.exp(new_log_probs - old_log_probs)
+        _log.debug(
+            "ratio — min=%.3f max=%.3f mean=%.3f (clip_eps=%.2f)",
+            ratio.min().item(),
+            ratio.max().item(),
+            ratio.mean().item(),
+            self.config.clip_epsilon,
+        )
 
         surr1 = ratio * advantages
         surr2 = (

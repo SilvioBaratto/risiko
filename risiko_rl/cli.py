@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
-from src.config import load_config, merge_cli_overrides
-from training.self_play import SelfPlayTrainer
+# training/ lives at the project root but is not an installed package.
+# Insert the root so it is importable regardless of cwd.
+_project_root = Path(__file__).parent.parent.resolve()
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
-from .agent_loader import load_agent
+from src.config import load_config, merge_cli_overrides  # noqa: E402
+from src.utils.log import setup_logging  # noqa: E402
+
+from .agent_loader import load_agent  # noqa: E402, I001
 
 app = typer.Typer(help="Risiko RL — train and evaluate PPO agents")
 
@@ -59,6 +66,7 @@ def train(
     ] = None,
 ):
     """Train a PPO agent on the Risiko environment."""
+    setup_logging()
     cfg = load_config(config)
     overrides: dict[str, str] = {}
     if lr is not None:
@@ -79,6 +87,8 @@ def train(
     cfg = merge_cli_overrides(cfg, overrides)
     typer.echo(f"Training with config: {cfg}")
 
+    from training.self_play import SelfPlayTrainer
+
     trainer = SelfPlayTrainer(cfg, checkpoint_dir=checkpoint_dir, log_dir=log_dir)
     trainer.train()
     typer.echo(f"Training complete. Episodes: {trainer._episode}")
@@ -97,6 +107,7 @@ def watch(
     ] = None,
 ):
     """Watch a single game between two agents, rendered frame-by-frame."""
+    setup_logging()
     from src.env import RisikoEnv
     from src.multi_agent import MultiAgentRunner
     from visualization.render_game import ReplayExporter, render_ascii, render_matplotlib
@@ -111,18 +122,18 @@ def watch(
 
     exporter = ReplayExporter() if output else None
 
-    for obs, _action, _reward in result.trajectories:
+    for t in result.trajectories:
         if mode == "ascii":
-            typer.echo(render_ascii(obs))
+            typer.echo(render_ascii(t.obs))
             typer.echo("-" * 40)
         elif mode == "matplotlib":
-            fig = render_matplotlib(obs)
+            fig = render_matplotlib(t.obs)
             # In CLI watch mode, matplotlib figures are not shown interactively
             import matplotlib.pyplot as plt
 
             plt.close(fig)
         if exporter is not None:
-            exporter.add_frame(obs)
+            exporter.add_frame(t.obs)
 
     winner_text = f"Player {result.winner}" if result.winner is not None else "Draw"
     typer.echo(f"Game over. Winner: {winner_text} (turns: {result.n_turns})")
@@ -149,6 +160,7 @@ def evaluate(
     ] = None,
 ):
     """Run a head-to-head evaluation and print win-rate statistics."""
+    setup_logging()
     from training.evaluate import evaluate_agents
 
     agent_a_obj = load_agent(agent_a)

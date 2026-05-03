@@ -19,11 +19,15 @@ from src.utils.constants import (
     CARD_SYMBOLS,
     CONTINENT_BONUSES,
     CONTINENTS,
+    MAX_ARMIES_PARAM,
     NUM_TERRITORIES,
     STARTING_ARMIES,
     get_trade_value,
 )
+from src.utils.log import get_logger
 from src.utils.reward_config import RewardConfig
+
+_log = get_logger("env")
 
 PHASE_TRADE = 0
 PHASE_REINFORCE = 1
@@ -91,10 +95,10 @@ class RisikoEnv(gym.Env):
         self.action_space = spaces.Dict(
             {
                 "action_type": spaces.Discrete(6),
-                "param_a": spaces.Discrete(NUM_TERRITORIES),
-                "param_b": spaces.Discrete(NUM_TERRITORIES),
-                "param_c": spaces.Discrete(43),
-                "param_d": spaces.Discrete(43),
+                "param_a": spaces.Discrete(MAX_ARMIES_PARAM + 1),
+                "param_b": spaces.Discrete(MAX_ARMIES_PARAM + 1),
+                "param_c": spaces.Discrete(MAX_ARMIES_PARAM + 1),
+                "param_d": spaces.Discrete(1),
             }
         )
 
@@ -254,6 +258,12 @@ class RisikoEnv(gym.Env):
     def _invalid_step(
         self,
     ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
+        s = self.state
+        _log.debug(
+            "invalid action — player=%d phase=%d",
+            s.current_player,
+            s.phase,
+        )
         return (
             self._get_obs(),
             float(self.reward_config.invalid_action_penalty),
@@ -372,12 +382,17 @@ class RisikoEnv(gym.Env):
         if s.armies[defender] == 0:
             defender_player = int(s.territory_owner[defender])
             s.territory_owner[defender] = s.current_player
-            s.armies[defender] = dice
-            s.armies[attacker] -= dice
+            s.armies[defender] = 0  # armies moved by _handle_capture_move
             s.turn_capture = 1
             s.last_capture_dice = dice
             s.last_attacker = attacker
             s.last_defender = defender
+            _log.debug(
+                "capture — player=%d took territory=%d from player=%d",
+                s.current_player,
+                defender,
+                defender_player,
+            )
             self._eliminate_player(defender_player)
             if len(s.cards[s.current_player]) < MAX_CARDS:
                 self._draw_card(s.current_player)
@@ -390,8 +405,20 @@ class RisikoEnv(gym.Env):
 
     def _eliminate_player(self, player: int) -> None:
         s = self.state
-        if np.sum(s.territory_owner == player) > 0:
+        remaining = int(np.sum(s.territory_owner == player))
+        if remaining > 0:
+            _log.debug(
+                "eliminate guard — player=%d still holds %d territories, skipping",
+                player,
+                remaining,
+            )
             return
+        _log.info(
+            "player=%d eliminated by player=%d | eliminated=%s",
+            player,
+            s.current_player,
+            s.eliminated.tolist(),
+        )
         s.eliminated[player] = 1
         eliminator = s.current_player
         transferred = s.cards[player].copy()
@@ -425,7 +452,7 @@ class RisikoEnv(gym.Env):
         defender = s.last_defender
         dice = s.last_capture_dice
         available = s.armies[attacker]
-        if move < dice or move > available:
+        if move < dice or move > available - 1:  # keep ≥1 army in attacker
             return False
         s.armies[defender] += move
         s.armies[attacker] -= move
@@ -475,9 +502,16 @@ class RisikoEnv(gym.Env):
 
     def _end_turn(self) -> None:
         s = self.state
+        prev_player = s.current_player
         if s.turn_capture and len(s.cards[s.current_player]) < MAX_CARDS:
             self._draw_card(s.current_player)
         self._next_player()
+        _log.debug(
+            "turn end — player=%d → player=%d | territories=%s",
+            prev_player,
+            s.current_player,
+            np.bincount(s.territory_owner, minlength=s.n_players).tolist(),
+        )
         self._compute_reinforcements()
         s.turn_capture = 0
         s.last_attacker = -1
@@ -512,6 +546,10 @@ class RisikoEnv(gym.Env):
             for p in range(s.n_players)
             if not s.eliminated[p] and np.sum(s.territory_owner == p) > 0
         ]
+        if len(active) <= 1:
+            _log.info("win detected — active=%s eliminated=%s", active, s.eliminated.tolist())
+        elif len(active) <= 2:
+            _log.debug("near-end — active=%s eliminated=%s", active, s.eliminated.tolist())
         return len(active) <= 1
 
     def _compute_reward(self, player: int, prev: dict[str, Any]) -> float:
@@ -599,8 +637,9 @@ class RisikoEnv(gym.Env):
                 add(5, 0, 0, 0, 0)
             else:
                 owned = np.where(s.territory_owner == player)[0]
+                cap = min(s.reinforcements_remaining, MAX_ARMIES_PARAM)
                 for terr in owned:
-                    for count in range(1, s.reinforcements_remaining + 1):
+                    for count in range(1, cap + 1):
                         add(1, int(terr), count, 0, 0)
         elif s.phase == PHASE_ATTACK:
             add(5, 0, 0, 0, 0)
@@ -615,7 +654,8 @@ class RisikoEnv(gym.Env):
             attacker = s.last_attacker
             dice = s.last_capture_dice
             available = s.armies[attacker]
-            for move in range(dice, int(available) + 1):
+            cap = min(int(available) - 1, MAX_ARMIES_PARAM)  # keep ≥1 in attacker
+            for move in range(dice, cap + 1):
                 add(3, move, 0, 0, 0)
         elif s.phase == PHASE_FORTIFY:
             add(5, 0, 0, 0, 0)
@@ -625,6 +665,7 @@ class RisikoEnv(gym.Env):
                     if source == target:
                         continue
                     if self._is_connected(source, target, player):
-                        for count in range(1, int(s.armies[source])):
+                        cap = min(int(s.armies[source]) - 1, MAX_ARMIES_PARAM)
+                        for count in range(1, cap + 1):
                             add(4, int(source), int(target), count, 0)
         return actions

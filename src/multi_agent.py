@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -11,6 +12,37 @@ import numpy as np
 from src.agents.base import Agent
 from src.agents.random_agent import RandomAgent
 from src.env import RisikoEnv
+from src.utils.log import get_logger
+
+_log = get_logger("runner")
+
+
+@dataclass(frozen=True)
+class Transition:
+    """One environment step's data, including PPO meta if available.
+
+    For agents that don't compute log_prob/value (RandomAgent, LLMOpponent),
+    those fields hold ``nan`` and the trainer ignores them. The PPO learner
+    (slot 0 by convention) populates them via ``act_with_meta``.
+
+    ``legal_actions`` carries the action mask context the consumer needs to
+    rebuild a per-head mask at update time so log-probs are computed under
+    the same constraint that was sampled.
+    """
+
+    obs: dict[str, np.ndarray]
+    action: dict[str, int]
+    reward: float
+    log_prob: float = math.nan
+    value: float = math.nan
+    legal_actions: list[dict[str, int]] = field(default_factory=list)
+
+    # Backwards-compatible 3-tuple unpacking: ``for obs, action, reward in trajectories``.
+    def __iter__(self):
+        """Yield (obs, action, reward) so legacy 3-tuple consumers still work."""
+        yield self.obs
+        yield self.action
+        yield self.reward
 
 
 @dataclass(frozen=True)
@@ -23,7 +55,7 @@ class GameResult:
     elimination_order: list[int]
     card_trade_turns: list[int]
     action_log: list[dict[str, Any]]
-    trajectories: list[tuple[dict[str, np.ndarray], dict[str, int], float]]
+    trajectories: list[Transition]
     card_trade_hand_sizes: list[int] = field(default_factory=list)
 
 
@@ -45,22 +77,41 @@ class MultiAgentRunner:
 
     def run_game(self, seed: int | None = None) -> GameResult:
         """Play one full game and return structured results."""
+        _log.debug(
+            "game start — n_players=%d seed=%s max_turns=%d",
+            self._n_players,
+            seed,
+            self._max_turns,
+        )
         obs, info = self._env.reset(seed=seed)
         recorder = _GameRecorder(self._env, self._n_players)
         turn = 0
         while turn < self._max_turns:
             player = int(obs["current_player"])
             legal = info["legal_actions"]
-            action = self._pick_action(player, obs, legal)
+            action, log_prob, value = self._pick_action(player, obs, legal)
             recorder.record_action(player, action)
             prev_trade_count = self._env.state.trade_count
             obs, reward, terminated, truncated, info = self._env.step(action)
-            recorder.record_step(obs, action, reward)
+            recorder.record_step(obs, action, reward, log_prob, value, legal)
             recorder.detect_trade(prev_trade_count, turn)
             turn += 1
             if terminated or truncated:
+                _log.info(
+                    "game ended early — terminated=%s truncated=%s turn=%d",
+                    terminated,
+                    truncated,
+                    turn,
+                )
                 break
-        return recorder.build_result()
+        result = recorder.build_result()
+        _log.info(
+            "game over — winner=%s turns=%d eliminations=%s",
+            result.winner,
+            result.n_turns,
+            result.elimination_order,
+        )
+        return result
 
     def run_games(self, n: int, seed: int) -> list[GameResult]:
         """Play *n* games with sequential seeds and return results."""
@@ -79,14 +130,17 @@ class MultiAgentRunner:
         player: int,
         obs: dict[str, np.ndarray],
         legal_actions: list[dict[str, int]],
-    ) -> dict[str, int]:
+    ) -> tuple[dict[str, int], float, float]:
+        """Return (action, log_prob, value); meta is nan for non-PPO agents."""
         if not legal_actions:
-            return self._skip_action()
+            return self._skip_action(), math.nan, math.nan
         agent = self._agents[player]
         try:
-            return agent.act(obs, legal_actions)
+            action, log_prob, value = agent.act_with_meta(obs, legal_actions)
+            return action, float(log_prob), float(value)
         except Exception:
-            return RandomAgent().act({}, legal_actions)
+            fallback = RandomAgent().act({}, legal_actions)
+            return fallback, math.nan, math.nan
 
     @staticmethod
     def _skip_action() -> dict[str, int]:
@@ -104,7 +158,7 @@ class _GameRecorder:
         self._card_trade_turns: list[int] = []
         self._card_trade_hand_sizes: list[int] = []
         self._action_log: list[dict[str, Any]] = []
-        self._trajectories: list[tuple[dict[str, np.ndarray], dict[str, int], float]] = []
+        self._trajectories: list[Transition] = []
         self._pending_trade_hand_size: int | None = None
         self._prev_eliminated: np.ndarray = np.zeros(6, dtype=np.int32)
 
@@ -119,9 +173,21 @@ class _GameRecorder:
         obs: dict[str, np.ndarray],
         action: dict[str, int],
         reward: float,
+        log_prob: float = math.nan,
+        value: float = math.nan,
+        legal_actions: list[dict[str, int]] | None = None,
     ) -> None:
         self._territory_history.append(self._territory_counts(obs))
-        self._trajectories.append((obs.copy(), action.copy(), reward))
+        self._trajectories.append(
+            Transition(
+                obs=obs.copy(),
+                action=action.copy(),
+                reward=reward,
+                log_prob=log_prob,
+                value=value,
+                legal_actions=list(legal_actions or []),
+            )
+        )
         self._detect_eliminations(obs)
 
     def detect_trade(self, prev_trade_count: int, turn: int) -> None:

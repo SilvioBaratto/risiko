@@ -1,4 +1,4 @@
-"""Tests for Ollama model eviction and BAML call serialisation lock."""
+"""Tests for Ollama model eviction and call serialisation lock."""
 
 from __future__ import annotations
 

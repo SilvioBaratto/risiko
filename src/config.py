@@ -52,6 +52,7 @@ class SelfPlayConfig:
     promote_threshold: float = 0.55
     eval_games: int = 10
     n_players: int = 2
+    llm_profiles_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class TrainingConfig:
     eval_freq: int = 50
     seed: int = 42
     device: str = "auto"
+    max_turns: int = 2000
     ppo: PPOConfig = field(default_factory=PPOConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     reward: RewardConfig = field(default_factory=RewardConfig)

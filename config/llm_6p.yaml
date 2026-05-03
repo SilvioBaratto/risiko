@@ -1,14 +1,17 @@
-# Default hyperparameters for Risiko RL PPO training
+# 6-player training: RL agent (slot 0) vs 5 LLM opponents (slots 1-5)
+# Each LLM opponent has a distinct strategy_hint and temperature.
+# Expect ~1-2 min per episode (5 LLM turns per player turn, ~200 turns/game).
 
-# Training loop
 total_timesteps: 1000000
 n_envs: 1
-save_freq: 100
+save_freq: 50
 eval_freq: 50
 seed: 42
 device: auto
+# Memory cap per episode (LLM games are slow but typically end faster than
+# random games due to varied policies). 2000 turns covers most LLM games.
+max_turns: 2000
 
-# PPO hyperparameters
 ppo:
   lr: 0.0003
   gamma: 0.99
@@ -21,21 +24,18 @@ ppo:
   n_epochs: 10
   batch_size: 64
 
-# Network architecture
 network:
   hidden_sizes: [256, 256]
   activation: tanh
 
-# Self-play settings
 self_play:
   opponent_update_freq: 50
   best_metric: win_rate
   promote_threshold: 0.55
   eval_games: 10
-  n_players: 2
-  # llm_profiles_path: config/default_6p.yaml  # uncomment to train against LLM opponents
+  n_players: 6
+  llm_profiles_path: config/default_6p.yaml
 
-# Reward shaping coefficients
 reward:
   sparse_win: 1.0
   sparse_loss: -1.0

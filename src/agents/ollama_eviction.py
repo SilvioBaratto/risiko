@@ -1,4 +1,4 @@
-"""Ollama model eviction and process-wide BAML call serialisation lock."""
+"""Ollama model eviction and process-wide call serialisation lock."""
 
 from __future__ import annotations
 

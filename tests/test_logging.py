@@ -10,8 +10,13 @@ from tensorboard.backend.event_processing.event_accumulator import (
     EventAccumulator,
 )
 
-from src.multi_agent import GameResult
+from src.multi_agent import GameResult, Transition
 from src.tb_logger import TensorBoardLogger
+
+
+def _t(obs=None, action=None, reward=0.0):
+    """Compact Transition factory for test fixtures."""
+    return Transition(obs=obs or {}, action=action or {}, reward=reward)
 
 
 @pytest.fixture
@@ -135,9 +140,9 @@ class TestLogGameResult:
                 },
             ],
             trajectories=[
-                ({}, {}, 1.0),
-                ({}, {}, 2.0),
-                ({}, {}, 3.0),
+                _t(reward=1.0),
+                _t(reward=2.0),
+                _t(reward=3.0),
             ],
         )
         logger.log_game_result(result, player_id=0, episode=7)
@@ -155,7 +160,7 @@ class TestLogGameResult:
             elimination_order=[],
             card_trade_turns=[],
             action_log=[],
-            trajectories=[({}, {}, 0.0)],
+            trajectories=[_t()],
         )
         logger.log_game_result(result, player_id=0, episode=1)
         _close_and_wait(logger)
@@ -171,7 +176,7 @@ class TestLogGameResult:
             elimination_order=[],
             card_trade_turns=[],
             action_log=[],
-            trajectories=[({}, {}, 0.0)],
+            trajectories=[_t()],
         )
         logger.log_game_result(result, player_id=0, episode=2)
         _close_and_wait(logger)
@@ -187,7 +192,7 @@ class TestLogGameResult:
             elimination_order=[],
             card_trade_turns=[],
             action_log=[],
-            trajectories=[({}, {}, 0.0)],
+            trajectories=[_t()],
         )
         logger.log_game_result(result, player_id=0, episode=3)
         _close_and_wait(logger)
@@ -209,7 +214,7 @@ class TestRollingWinRate:
                 elimination_order=[],
                 card_trade_turns=[],
                 action_log=[],
-                trajectories=[({}, {}, 0.0)],
+                trajectories=[_t()],
             )
             logger.log_game_result(result, player_id=0, episode=i + 1)
         _close_and_wait(logger)
@@ -229,7 +234,7 @@ class TestRollingWinRate:
                 elimination_order=[],
                 card_trade_turns=[],
                 action_log=[],
-                trajectories=[({}, {}, 0.0)],
+                trajectories=[_t()],
             )
             logger.log_game_result(result, player_id=0, episode=i + 1)
         _close_and_wait(logger)
@@ -255,13 +260,7 @@ class TestContinentControl:
             elimination_order=[],
             card_trade_turns=[],
             action_log=[],
-            trajectories=[
-                (
-                    {"territory_owner": territory_owner},
-                    {},
-                    0.0,
-                ),
-            ],
+            trajectories=[_t(obs={"territory_owner": territory_owner})],
         )
         logger.log_game_result(result, player_id=0, episode=1)
         _close_and_wait(logger)
@@ -280,9 +279,7 @@ class TestContinentControl:
             elimination_order=[],
             card_trade_turns=[],
             action_log=[],
-            trajectories=[
-                ({"territory_owner": territory_owner}, {}, 0.0),
-            ],
+            trajectories=[_t(obs={"territory_owner": territory_owner})],
         )
         logger.log_game_result(result, player_id=0, episode=1)
         _close_and_wait(logger)
