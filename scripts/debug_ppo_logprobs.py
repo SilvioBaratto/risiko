@@ -96,7 +96,9 @@ def main() -> None:
     obs_flat = flatten_obs(batch["obs"])
     with torch.no_grad():
         _, new_lp, _, _ = net.get_action_and_value(
-            obs_flat, action=batch["actions"], action_masks=batch["action_masks"],
+            obs_flat,
+            action=batch["actions"],
+            action_masks=batch["action_masks"],
         )
 
     old_lp = batch["log_probs"]
@@ -104,8 +106,9 @@ def main() -> None:
 
     print("Per-transition |old_log_prob - new_log_prob|:")
     for i, d in enumerate(diff.tolist()[:10]):
-        print(f"  i={i:2d}  old={old_lp[i].item():+.4f}  "
-              f"new={new_lp[i].item():+.4f}  diff={d:+.4f}")
+        print(
+            f"  i={i:2d}  old={old_lp[i].item():+.4f}  new={new_lp[i].item():+.4f}  diff={d:+.4f}"
+        )
     if len(diff) > 10:
         print(f"  ... ({len(diff) - 10} more transitions)")
     print()
@@ -120,11 +123,15 @@ def main() -> None:
     # to the per-update approx_kl reported in TensorBoard. Pre-fix this was
     # ~17.7; post-fix it should be ≪ 0.05.
     if mean_diff < 0.05 and max_diff < 0.5:
-        print(f"RESULT: PASS. mean diff {mean_diff:.4f}, max diff {max_diff:.4f}. "
-              "PPO will train correctly. (Tiny per-sample diffs are float32 noise.)")
+        print(
+            f"RESULT: PASS. mean diff {mean_diff:.4f}, max diff {max_diff:.4f}. "
+            "PPO will train correctly. (Tiny per-sample diffs are float32 noise.)"
+        )
     elif mean_diff < 1.0:
-        print(f"RESULT: SUSPICIOUS. mean diff {mean_diff:.4f} — within tolerance "
-              "but check the failing transitions above.")
+        print(
+            f"RESULT: SUSPICIOUS. mean diff {mean_diff:.4f} — within tolerance "
+            "but check the failing transitions above."
+        )
     else:
         print(f"RESULT: FAIL. mean diff {mean_diff:.4f} ≫ 0. Bug still present.")
 

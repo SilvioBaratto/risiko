@@ -41,8 +41,12 @@ _PHASE_INSTRUCTIONS = {
 }
 
 _ACTION_NAMES = {
-    0: "TRADE", 1: "REINFORCE", 2: "ATTACK",
-    3: "CAPTURE_MOVE", 4: "FORTIFY", 5: "SKIP",
+    0: "TRADE",
+    1: "REINFORCE",
+    2: "ATTACK",
+    3: "CAPTURE_MOVE",
+    4: "FORTIFY",
+    5: "SKIP",
 }
 
 _SYMBOLS = {0: "infantry", 1: "cavalry", 2: "artillery", 3: "wild"}
@@ -94,7 +98,10 @@ def call_ollama_for_action_index(
     }
     _log.debug(
         "---PROMPT--- model=%s temp=%.2f n_legal=%d\n%s",
-        model, temperature, len(legal_actions), prompt,
+        model,
+        temperature,
+        len(legal_actions),
+        prompt,
     )
     t0 = time.time()
     response = httpx.post(f"{url}/api/chat", json=body, timeout=timeout)
@@ -108,7 +115,9 @@ def call_ollama_for_action_index(
         _log.warning(
             "LLM returned empty content (model=%s, %.2fs, eval_duration=%.0fms) — "
             "thinking may still be enabled or model failed",
-            model, elapsed, eval_duration_ms,
+            model,
+            elapsed,
+            eval_duration_ms,
         )
         return None
     try:
@@ -121,12 +130,19 @@ def call_ollama_for_action_index(
         chosen = legal_actions[idx]
         _log.info(
             "LLM model=%s reply=%s → idx=%d action=%s (%.2fs, %d tok)",
-            model, content, idx, chosen, elapsed, eval_count,
+            model,
+            content,
+            idx,
+            chosen,
+            elapsed,
+            eval_count,
         )
         return idx
     _log.warning(
         "LLM returned out-of-range idx=%d (reply=%s, legal range 0..%d) — falling back",
-        idx, content, len(legal_actions) - 1,
+        idx,
+        content,
+        len(legal_actions) - 1,
     )
     return None
 
@@ -161,9 +177,7 @@ def _render_prompt(
     parts.append(_render_status(obs, phase))
     parts.append(_render_board(obs, me))
     parts.append(_render_legal_actions(legal_actions, obs))
-    parts.append(
-        f'Reply with JSON only: {{"action_index": <integer 0..{len(legal_actions) - 1}>}}'
-    )
+    parts.append(f'Reply with JSON only: {{"action_index": <integer 0..{len(legal_actions) - 1}>}}')
     return "\n\n".join(parts)
 
 

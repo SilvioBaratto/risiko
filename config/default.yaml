@@ -7,6 +7,7 @@ save_freq: 100
 eval_freq: 50
 seed: 42
 device: auto
+max_turns: 2000
 
 # PPO hyperparameters
 ppo:

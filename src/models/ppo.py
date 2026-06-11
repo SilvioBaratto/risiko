@@ -95,7 +95,9 @@ class PPOTrainer:
         action_masks = batch.get("action_masks")
 
         _, new_log_probs, entropy, new_values = self.net.get_action_and_value(
-            obs, action=actions, action_masks=action_masks,
+            obs,
+            action=actions,
+            action_masks=action_masks,
         )
 
         _log.debug(

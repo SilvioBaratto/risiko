@@ -222,9 +222,7 @@ class TestEviction:
             a.act(dummy_obs, dummy_legal)
         mock_evict.assert_not_called()
 
-    def test_when_evict_enabled_evict_is_called_on_success(
-        self, dummy_obs, dummy_legal
-    ) -> None:
+    def test_when_evict_enabled_evict_is_called_on_success(self, dummy_obs, dummy_legal) -> None:
         a = LLMOpponent(timeout=0.5, evict_after_call=True)
         with (
             patch.object(a, "_call_with_timeout", return_value=0),
@@ -233,9 +231,7 @@ class TestEviction:
             a.act(dummy_obs, dummy_legal)
         mock_evict.assert_called_once()
 
-    def test_when_evict_enabled_evict_is_called_on_timeout(
-        self, dummy_obs, dummy_legal
-    ) -> None:
+    def test_when_evict_enabled_evict_is_called_on_timeout(self, dummy_obs, dummy_legal) -> None:
         a = LLMOpponent(timeout=0.5, evict_after_call=True)
         with (
             patch.object(a, "_call_with_timeout", side_effect=FuturesTimeoutError),
@@ -244,9 +240,7 @@ class TestEviction:
             a.act(dummy_obs, dummy_legal)
         mock_evict.assert_called_once()
 
-    def test_when_evict_enabled_evict_is_called_on_http_error(
-        self, dummy_obs, dummy_legal
-    ) -> None:
+    def test_when_evict_enabled_evict_is_called_on_http_error(self, dummy_obs, dummy_legal) -> None:
         a = LLMOpponent(timeout=0.5, evict_after_call=True)
         with (
             patch.object(a, "_call_with_timeout", side_effect=httpx.ConnectError("boom")),

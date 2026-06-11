@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import numpy as np
+import pytest
 import torch
 
+from src.utils import reward_config as reward_config_module
+from src.utils import seed as seed_module
 from src.utils.reward_config import RewardConfig
 from src.utils.seed import set_global_seeds
 
@@ -67,6 +72,36 @@ class TestRewardConfig:
         fields = [f for f in cfg.__dataclass_fields__ if not f.startswith("_")]
         assert len(fields) == 7
 
+    def test_when_field_mutated_then_frozen_instance_error_raised(self):
+        """Mutation must raise FrozenInstanceError specifically."""
+        cfg = RewardConfig()
+        with pytest.raises(FrozenInstanceError):
+            cfg.dense_army_ratio = 9.9  # type: ignore[misc]
+
+    def test_when_dense_coefficients_inspected_then_each_within_1e_1(self):
+        """Every dense coefficient must stay at order 1e-1 or smaller."""
+        cfg = RewardConfig()
+        dense = [
+            cfg.dense_territory_delta,
+            cfg.dense_continent_bonus_delta,
+            cfg.dense_army_ratio,
+            cfg.dense_elimination_bonus,
+        ]
+        for coef in dense:
+            assert abs(coef) <= 0.1
+
+    def test_when_dense_field_zeroed_then_others_keep_defaults(self):
+        """Zeroing one dense coefficient must not touch the others (ablation)."""
+        cfg = RewardConfig(dense_continent_bonus_delta=0.0)
+        assert cfg.dense_continent_bonus_delta == 0.0
+        assert cfg.dense_territory_delta == 0.01
+        assert cfg.dense_army_ratio == 0.005
+        assert cfg.dense_elimination_bonus == 0.1
+
+    def test_when_module_imported_then_all_exports_reward_config(self):
+        """The module must declare __all__ exporting RewardConfig."""
+        assert reward_config_module.__all__ == ["RewardConfig"]
+
 
 class TestSeeding:
     """Global seeding utility properties."""
@@ -116,3 +151,15 @@ class TestSeeding:
         rng2 = set_global_seeds(42)
         seq2 = rng2.random(100)
         assert np.array_equal(seq1, seq2)
+
+    def test_when_seeds_set_then_cudnn_determinism_flags_enabled(self):
+        """Determinism flags for cuDNN must be enabled for reproducible torch ops."""
+        torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True
+        set_global_seeds(42)
+        assert torch.backends.cudnn.deterministic is True
+        assert torch.backends.cudnn.benchmark is False
+
+    def test_when_module_imported_then_all_exports_set_global_seeds(self):
+        """The seed module must declare __all__ exporting set_global_seeds."""
+        assert seed_module.__all__ == ["set_global_seeds"]

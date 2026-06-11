@@ -10,9 +10,11 @@ from unittest.mock import patch
 
 import pytest
 
+import src.config as config_module
 from src.config import (
     NetworkConfig,
     PPOConfig,
+    SelfPlayConfig,
     TrainingConfig,
     load_config,
     merge_cli_overrides,
@@ -250,6 +252,61 @@ class TestMergeCliOverrides:
         bool_cfg = _BoolCfg()
         new_cfg = merge_cli_overrides(bool_cfg, {"flag": "true"})
         assert new_cfg.flag is True
+
+    def test_when_unknown_top_level_path_then_value_error_names_path(self):
+        """An unknown top-level override key raises ValueError naming the path."""
+        cfg = TrainingConfig()
+        with pytest.raises(ValueError, match="bogus"):
+            merge_cli_overrides(cfg, {"bogus": "1"})
+
+    def test_when_unknown_nested_path_then_value_error_names_path(self):
+        """An unknown nested override key raises ValueError naming the path."""
+        cfg = TrainingConfig()
+        with pytest.raises(ValueError, match=r"ppo\.bogus"):
+            merge_cli_overrides(cfg, {"ppo.bogus": "1"})
+
+    def test_when_descending_into_non_dataclass_then_value_error(self):
+        """A dot-path that descends past a scalar leaf raises ValueError."""
+        cfg = TrainingConfig()
+        with pytest.raises(ValueError, match=r"ppo\.lr\.x"):
+            merge_cli_overrides(cfg, {"ppo.lr.x": "1"})
+
+
+class TestSelfPlayConfigFields:
+    """SelfPlayConfig defaults and immutability."""
+
+    def test_when_default_then_n_players_is_2(self):
+        """Default player count is 2."""
+        assert SelfPlayConfig().n_players == 2
+
+    def test_when_default_then_promote_threshold_is_0_55(self):
+        """Default promotion threshold is 0.55."""
+        assert SelfPlayConfig().promote_threshold == 0.55
+
+    def test_when_default_then_llm_profiles_path_is_none(self):
+        """LLM profiles path defaults to None."""
+        assert SelfPlayConfig().llm_profiles_path is None
+
+    def test_when_mutated_then_frozen(self):
+        """SelfPlayConfig is immutable."""
+        with pytest.raises(FrozenInstanceError):
+            SelfPlayConfig().n_players = 9  # type: ignore[misc]
+
+
+class TestModuleExports:
+    """Public API surface declared via __all__."""
+
+    def test_when_imported_then_all_lists_public_api(self):
+        """__all__ exports the four dataclasses and three functions."""
+        assert set(config_module.__all__) == {
+            "PPOConfig",
+            "NetworkConfig",
+            "SelfPlayConfig",
+            "TrainingConfig",
+            "load_config",
+            "merge_cli_overrides",
+            "resolve_device",
+        }
 
 
 class TestRewardConfigDefaults:

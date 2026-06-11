@@ -6,6 +6,23 @@ continent definitions, card deck composition, and static lookup helpers.
 
 from __future__ import annotations
 
+__all__ = [
+    "NUM_TERRITORIES",
+    "NUM_WILD_CARDS",
+    "TRADE_VALUES_INCREMENT",
+    "TERRITORY_NAMES",
+    "CONTINENTS",
+    "CONTINENT_BONUSES",
+    "ADJACENCY",
+    "CARD_SYMBOLS",
+    "TRADE_VALUES",
+    "STARTING_ARMIES",
+    "MAX_ARMIES_PARAM",
+    "ACTION_DIMS",
+    "get_trade_value",
+    "territory_to_continent",
+]
+
 NUM_TERRITORIES = 42
 NUM_WILD_CARDS = 2
 TRADE_VALUES_INCREMENT = 5

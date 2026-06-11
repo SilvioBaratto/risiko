@@ -255,10 +255,10 @@ class SelfPlayTrainer:
         the gradient.
         """
         import math as _math
+
         added = 0
         total_learner = sum(
-            1 for t in result.trajectories
-            if int(t.obs["current_player"]) == _LEARNER_ID
+            1 for t in result.trajectories if int(t.obs["current_player"]) == _LEARNER_ID
         )
         for t in result.trajectories:
             if len(buffer) >= buffer.capacity:

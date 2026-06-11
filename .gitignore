@@ -222,3 +222,4 @@ graphify-out/cost.json
 .vscode/
 .playwright-mcp/
 .code-generator/
+graphify-out/

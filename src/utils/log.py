@@ -20,6 +20,10 @@ import logging
 import os
 from pathlib import Path
 
+__all__ = ["get_logger", "setup_logging", "DEFAULT_LOG_FILE"]
+
+DEFAULT_LOG_FILE = Path("logs/risiko_debug.log")
+
 
 def get_logger(name: str) -> logging.Logger:
     """Return a child logger under the 'risiko' root namespace."""
@@ -61,7 +65,7 @@ def setup_logging(
     root.addHandler(console)
 
     if log_file is None:
-        log_file = Path("logs/risiko_debug.log")
+        log_file = DEFAULT_LOG_FILE
     log_file.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
     file_handler.setLevel(numeric_level)
@@ -70,5 +74,7 @@ def setup_logging(
 
     root.info(
         "logging initialised — file=%s level=%s console=%s",
-        log_file, level_str, console_level_str,
+        log_file,
+        level_str,
+        console_level_str,
     )

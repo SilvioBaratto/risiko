@@ -16,6 +16,16 @@ import yaml
 
 from src.utils.reward_config import RewardConfig
 
+__all__ = [
+    "PPOConfig",
+    "NetworkConfig",
+    "SelfPlayConfig",
+    "TrainingConfig",
+    "load_config",
+    "merge_cli_overrides",
+    "resolve_device",
+]
+
 T = TypeVar("T")
 
 
@@ -112,12 +122,22 @@ def merge_cli_overrides(cfg: T, overrides: dict[str, str]) -> T:
     raw = dataclasses.asdict(cfg)  # type: ignore[arg-type]
     for key, val in overrides.items():
         parts = key.split(".")
+        _validate_path(cfg, parts, key)
         target = raw
         for part in parts[:-1]:
             target = target[part]
         leaf = parts[-1]
         target[leaf] = _cast_value(val, cfg, parts)
     return _from_dict(type(cfg), raw)
+
+
+def _validate_path(root: Any, parts: list[str], key: str) -> None:
+    """Ensure every segment of a dot-path names a real dataclass field."""
+    obj_type: type[Any] = type(root)
+    for part in parts:
+        if not dataclasses.is_dataclass(obj_type) or part not in {f.name for f in fields(obj_type)}:
+            raise ValueError(f"Unknown config path: {key}")
+        obj_type = get_type_hints(obj_type).get(part, str)
 
 
 def _cast_value(raw: str, root: Any, path: list[str]) -> Any:

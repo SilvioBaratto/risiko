@@ -81,10 +81,7 @@ def _fill_buffer_with_obs(
         sampled = {k: int(v.item()) for k, v in action.items()}
         legal = [sampled]
         for offset in (1, 2):
-            alt = {
-                k: (sampled[k] + offset) % net.action_dims[k]
-                for k in net.action_dims
-            }
+            alt = {k: (sampled[k] + offset) % net.action_dims[k] for k in net.action_dims}
             legal.append(alt)
         buf.add(
             state=state,

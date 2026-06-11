@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from src.utils import constants as constants_module
 from src.utils.constants import (
+    ACTION_DIMS,
     ADJACENCY,
     CARD_SYMBOLS,
     CONTINENT_BONUSES,
     CONTINENTS,
+    MAX_ARMIES_PARAM,
     NUM_TERRITORIES,
     NUM_WILD_CARDS,
     STARTING_ARMIES,
@@ -187,3 +190,64 @@ class TestStartingArmies:
         assert STARTING_ARMIES[4] == 30
         assert STARTING_ARMIES[5] == 25
         assert STARTING_ARMIES[6] == 20
+
+
+class TestActionDims:
+    """Hierarchical action-space dimension table."""
+
+    def test_when_queried_action_dims_has_expected_keys(self):
+        """ACTION_DIMS must expose exactly the five action components."""
+        assert set(ACTION_DIMS) == {
+            "action_type",
+            "param_a",
+            "param_b",
+            "param_c",
+            "param_d",
+        }
+
+    def test_when_queried_action_type_is_6(self):
+        """There must be 6 discrete action types."""
+        assert ACTION_DIMS["action_type"] == 6
+
+    def test_when_queried_param_heads_size_against_named_constant(self):
+        """Parameter heads must be sized MAX_ARMIES_PARAM + 1, not a literal."""
+        assert MAX_ARMIES_PARAM == 200
+        for head in ("param_a", "param_b", "param_c"):
+            assert ACTION_DIMS[head] == MAX_ARMIES_PARAM + 1
+
+    def test_when_queried_param_d_is_unused_placeholder(self):
+        """param_d is an unused placeholder of size 1."""
+        assert ACTION_DIMS["param_d"] == 1
+
+
+class TestModuleExports:
+    """Public API surface declared via __all__."""
+
+    def test_when_imported_all_is_defined(self):
+        """The module must declare __all__."""
+        assert hasattr(constants_module, "__all__")
+
+    def test_when_imported_all_lists_every_public_symbol(self):
+        """__all__ must cover every public constant and helper."""
+        expected = {
+            "NUM_TERRITORIES",
+            "NUM_WILD_CARDS",
+            "TRADE_VALUES_INCREMENT",
+            "TERRITORY_NAMES",
+            "CONTINENTS",
+            "CONTINENT_BONUSES",
+            "ADJACENCY",
+            "CARD_SYMBOLS",
+            "TRADE_VALUES",
+            "STARTING_ARMIES",
+            "MAX_ARMIES_PARAM",
+            "ACTION_DIMS",
+            "get_trade_value",
+            "territory_to_continent",
+        }
+        assert set(constants_module.__all__) == expected
+
+    def test_when_imported_all_names_resolve(self):
+        """Every name in __all__ must exist on the module."""
+        for name in constants_module.__all__:
+            assert hasattr(constants_module, name)

@@ -11,6 +11,8 @@ import random
 import numpy as np
 import torch
 
+__all__ = ["set_global_seeds"]
+
 
 def set_global_seeds(seed: int) -> np.random.Generator:
     """Fix all global random seeds and return a local numpy Generator.
@@ -24,6 +26,8 @@ def set_global_seeds(seed: int) -> np.random.Generator:
         np.random or random to avoid state pollution.
     """
     torch.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
     random.seed(seed)
     return np.random.default_rng(seed)
