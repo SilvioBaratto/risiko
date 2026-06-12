@@ -42,7 +42,8 @@ def load_agent(spec: str, *, seed: int | None = None) -> Any:
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {spec}")
 
-    checkpoint = torch.load(path, weights_only=False)
+    # Security fix: Use weights_only=True to prevent arbitrary code execution via insecure deserialization.
+    checkpoint = torch.load(path, weights_only=True)
     config = checkpoint.get("config", {})
     network_cfg = config.get("network", {})
     hidden_sizes = network_cfg.get("hidden_sizes", (256, 256))

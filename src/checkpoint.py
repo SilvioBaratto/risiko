@@ -82,6 +82,8 @@ class CheckpointManager:
         Returns:
             Dict with keys: trainer_state, rng_state, episode, config.
         """
-        payload = torch.load(path, weights_only=False)
+        # Security fix: restrict unpickling to tensors, primitives, and dicts
+        # to prevent arbitrary code execution from malicious checkpoint files.
+        payload = torch.load(path, weights_only=True)
         payload["config"] = _config_from_dict(payload["config"])
         return payload
