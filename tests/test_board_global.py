@@ -1,8 +1,8 @@
 """Tests for global acceptance criteria (Issue #48, oracle tier UNIT / T2).
 
 Covered:
-  [T2]   LLM opponent calls Ollama via /chat/completions with
-          json_schema strict output.
+  [T2]   LLM opponent calls Ollama via the native /api/chat endpoint with
+          an enforced JSON-schema `format` field.
   [UNIT] Ollama credentials in .env; .env.example is committed.
   [UNIT] LLM output is an index into legal_actions — always legal.
   [UNIT] render_action_prompt() is the single source of truth for the prompt.
@@ -55,9 +55,7 @@ def _skip() -> dict[str, int]:
 def _make_ollama_response(action_index: int) -> MagicMock:
     resp = MagicMock()
     resp.raise_for_status = MagicMock()
-    resp.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"action_index": action_index})}}]
-    }
+    resp.json.return_value = {"message": {"content": json.dumps({"action_index": action_index})}}
     return resp
 
 
@@ -147,12 +145,12 @@ def test_when_render_action_prompt_called_with_any_n_actions_then_no_error_is_ra
 
 
 # ---------------------------------------------------------------------------
-# Ollama /chat/completions with json_schema strict
+# Ollama native /api/chat with an enforced `format` schema
 # ---------------------------------------------------------------------------
 
 
-def test_when_ollama_called_then_url_contains_chat_completions():
-    """Criterion: LLM opponent calls Ollama via /chat/completions."""
+def test_when_ollama_called_then_url_targets_api_chat():
+    """Criterion: LLM opponent calls Ollama via the native /api/chat endpoint."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
@@ -162,13 +160,13 @@ def test_when_ollama_called_then_url_contains_chat_completions():
     with patch("httpx.post", side_effect=_fake_post):
         _call_ollama([_skip()])
 
-    assert "/chat/completions" in captured.get("url", ""), (
-        "Request URL must include /chat/completions"
-    )
+    url = captured.get("url", "")
+    assert url.endswith("/api/chat"), "Request URL must target the native /api/chat endpoint"
+    assert "/v1/" not in url, "Native endpoint must not contain /v1/"
 
 
-def test_when_ollama_called_then_response_format_type_is_json_schema():
-    """Criterion: request uses json_schema response_format."""
+def test_when_ollama_called_then_format_type_is_object():
+    """Criterion: request uses an object `format` JSON schema."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
@@ -179,12 +177,12 @@ def test_when_ollama_called_then_response_format_type_is_json_schema():
         _call_ollama([_skip()])
 
     body = captured.get("body", {})
-    assert "response_format" in body
-    assert body["response_format"].get("type") == "json_schema"
+    assert "format" in body
+    assert body["format"].get("type") == "object"
 
 
-def test_when_ollama_called_then_json_schema_strict_is_true():
-    """Criterion: json_schema strict output enforced."""
+def test_when_ollama_called_then_format_schema_requires_action_index():
+    """Criterion: the enforced `format` schema constrains output to 'action_index'."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
@@ -194,12 +192,13 @@ def test_when_ollama_called_then_json_schema_strict_is_true():
     with patch("httpx.post", side_effect=_fake_post):
         _call_ollama([_skip()])
 
-    schema_block = captured["body"].get("response_format", {}).get("json_schema", {})
-    assert schema_block.get("strict") is True
+    fmt = captured["body"].get("format", {})
+    assert "action_index" in fmt.get("required", [])
+    assert fmt.get("properties", {}).get("action_index", {}).get("type") == "integer"
 
 
-def test_when_ollama_called_then_temperature_is_in_request_body():
-    """Criterion: per-call temperature injected into the Ollama request body."""
+def test_when_ollama_called_then_temperature_is_in_request_options():
+    """Criterion: per-call temperature injected into the Ollama request options."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
@@ -209,11 +208,11 @@ def test_when_ollama_called_then_temperature_is_in_request_body():
     with patch("httpx.post", side_effect=_fake_post):
         _call_ollama([_skip()], temperature=0.3)
 
-    assert captured["body"].get("temperature") == pytest.approx(0.3)
+    assert captured["body"].get("options", {}).get("temperature") == pytest.approx(0.3)
 
 
-def test_when_ollama_called_then_top_p_is_in_request_body():
-    """Criterion: per-call top_p injected into the Ollama request body."""
+def test_when_ollama_called_then_top_p_is_in_request_options():
+    """Criterion: per-call top_p injected into the Ollama request options."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
@@ -223,7 +222,7 @@ def test_when_ollama_called_then_top_p_is_in_request_body():
     with patch("httpx.post", side_effect=_fake_post):
         _call_ollama([_skip()], top_p=0.95)
 
-    assert captured["body"].get("top_p") == pytest.approx(0.95)
+    assert captured["body"].get("options", {}).get("top_p") == pytest.approx(0.95)
 
 
 # ---------------------------------------------------------------------------

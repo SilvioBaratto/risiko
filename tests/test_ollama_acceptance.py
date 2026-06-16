@@ -53,9 +53,7 @@ def _cfg(**overrides) -> PlayerConfig:
 def _ok_response(idx: int = 0) -> MagicMock:
     resp = MagicMock()
     resp.raise_for_status.return_value = None
-    resp.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"action_index": idx})}}]
-    }
+    resp.json.return_value = {"message": {"content": json.dumps({"action_index": idx})}}
     return resp
 
 
@@ -70,14 +68,14 @@ def env_data():
 
 
 # ---------------------------------------------------------------------------
-# 1. json_schema strict
-#    Criterion: LLM opponent calls Ollama via /chat/completions with
-#               json_schema strict output.
+# 1. Enforced `format` schema
+#    Criterion: LLM opponent calls Ollama via the native /api/chat endpoint
+#               with an enforced JSON-schema `format` field and thinking on.
 # ---------------------------------------------------------------------------
 
 
-def test_when_choose_action_called_then_request_uses_json_schema_strict():
-    """Ollama request body must declare response_format.type='json_schema' with strict=True."""
+def test_when_choose_action_called_then_request_uses_enforced_format_schema():
+    """Ollama request body must declare an object `format` schema with thinking enabled."""
     with (
         patch.dict(os.environ, _CREDS, clear=False),
         patch("src.agents.ollama_client.ensure_env_loaded"),
@@ -89,9 +87,10 @@ def test_when_choose_action_called_then_request_uses_json_schema_strict():
         )
 
     body = mock_post.call_args.kwargs["json"]
-    rf = body.get("response_format", {})
-    assert rf.get("type") == "json_schema"
-    assert rf.get("json_schema", {}).get("strict") is True
+    fmt = body.get("format", {})
+    assert fmt.get("type") == "object"
+    assert fmt.get("properties", {}).get("action_index", {}).get("type") == "integer"
+    assert body.get("think") is True
 
 
 # ---------------------------------------------------------------------------
@@ -113,8 +112,8 @@ def test_when_choose_action_called_then_temperature_and_top_p_are_in_request_bod
         )
 
     body = mock_post.call_args.kwargs["json"]
-    assert body["temperature"] == pytest.approx(0.3)
-    assert body["top_p"] == pytest.approx(0.85)
+    assert body["options"]["temperature"] == pytest.approx(0.3)
+    assert body["options"]["top_p"] == pytest.approx(0.85)
 
 
 @given(
@@ -141,8 +140,8 @@ def test_when_any_valid_temperature_and_top_p_then_both_reach_request_body(
         )
 
     body = mock_post.call_args.kwargs["json"]
-    assert body["temperature"] == pytest.approx(temperature, abs=1e-9)
-    assert body["top_p"] == pytest.approx(top_p, abs=1e-9)
+    assert body["options"]["temperature"] == pytest.approx(temperature, abs=1e-9)
+    assert body["options"]["top_p"] == pytest.approx(top_p, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------
@@ -254,8 +253,8 @@ def test_when_credentials_not_configured_then_defaults_are_used_and_no_error_rai
 
     assert result == 0
     url = mock_post.call_args.args[0]
-    assert url.startswith("http://localhost:11434/v1"), (
-        f"Expected localhost default URL, got: {url!r}"
+    assert url == "http://localhost:11434/api/chat", (
+        f"Expected native localhost default URL, got: {url!r}"
     )
     headers = mock_post.call_args.kwargs["headers"]
     assert headers.get("Authorization") == "Bearer ollama", (
@@ -264,13 +263,13 @@ def test_when_credentials_not_configured_then_defaults_are_used_and_no_error_rai
 
 
 # ---------------------------------------------------------------------------
-# 9. URL ends /chat/completions with Authorization: Bearer header
+# 9. URL ends /api/chat with Authorization: Bearer header
 #    Criterion: URL format + Authorization: Bearer header (no api-version, no api-key).
 # ---------------------------------------------------------------------------
 
 
-def test_when_request_sent_url_contains_chat_completions_and_bearer_auth_header():
-    """POST URL must contain /chat/completions; Authorization: Bearer header required."""
+def test_when_request_sent_url_targets_api_chat_and_bearer_auth_header():
+    """POST URL must target the native /api/chat; Authorization: Bearer header required."""
     with (
         patch.dict(os.environ, _CREDS, clear=False),
         patch("src.agents.ollama_client.ensure_env_loaded"),
@@ -283,7 +282,8 @@ def test_when_request_sent_url_contains_chat_completions_and_bearer_auth_header(
 
     url: str = mock_post.call_args.args[0]
     headers: dict = mock_post.call_args.kwargs["headers"]
-    assert "/chat/completions" in url, f"URL {url!r} missing '/chat/completions'"
+    assert url.endswith("/api/chat"), f"URL {url!r} must end with '/api/chat'"
+    assert "/v1/" not in url, f"URL {url!r} must NOT contain '/v1/'"
     assert "api-version=" not in url, f"URL {url!r} must NOT contain 'api-version='"
     assert "Authorization" in headers, f"'Authorization' header missing; got: {list(headers)}"
     assert headers["Authorization"].startswith("Bearer "), (

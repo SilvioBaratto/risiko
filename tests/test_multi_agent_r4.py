@@ -69,9 +69,7 @@ def _game_result(**kw):
 def _fake_http_response(action_index: int) -> unittest.mock.MagicMock:
     resp = unittest.mock.MagicMock()
     resp.status_code = 200
-    resp.json.return_value = {
-        "message": {"content": f'{{"action_index": {action_index}}}'}
-    }
+    resp.json.return_value = {"message": {"content": f'{{"action_index": {action_index}}}'}}
     return resp
 
 
@@ -551,9 +549,7 @@ def test_when_ollama_client_is_called_then_url_is_native_api_chat():
 
     call_args = mock_post.call_args
     url = call_args.args[0] if call_args.args else call_args.kwargs.get("url", "")
-    assert str(url).endswith("/api/chat"), (
-        f"Expected URL to end with '/api/chat', got: {url!r}"
-    )
+    assert str(url).endswith("/api/chat"), f"Expected URL to end with '/api/chat', got: {url!r}"
     assert "/v1/" not in str(url)
 
 
@@ -587,9 +583,7 @@ def test_when_ollama_client_is_called_then_format_type_is_object():
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
     fmt = body.get("format", {})
-    assert fmt.get("type") == "object", (
-        f"format.type must be 'object', got: {fmt.get('type')!r}"
-    )
+    assert fmt.get("type") == "object", f"format.type must be 'object', got: {fmt.get('type')!r}"
 
 
 def test_when_ollama_client_is_called_then_thinking_is_enabled():

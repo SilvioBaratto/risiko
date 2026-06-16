@@ -1,8 +1,8 @@
 """Spec-derived tests for issue #58 — Ollama API contract and render_action_prompt.
 
 Criteria covered:
-  [T2]   LLM opponent calls Ollama via /chat/completions
-         with json_schema strict output
+  [T2]   LLM opponent calls Ollama via the native /api/chat endpoint
+         with an enforced JSON-schema `format` field
   [UNIT] Ollama credentials load from a git-ignored .env
          (OLLAMA_BASE_URL / OLLAMA_API_KEY); .env.example committed
   [UNIT] LLM output is an index into legal_actions — chosen action always legal
@@ -62,7 +62,7 @@ def _skip_action() -> dict[str, int]:
 
 def _make_mock_response(action_index: int) -> MagicMock:
     """Build a mock httpx.Response for a given action_index reply."""
-    body = {"choices": [{"message": {"content": json.dumps({"action_index": action_index})}}]}
+    body = {"message": {"content": json.dumps({"action_index": action_index})}}
     resp = MagicMock()
     resp.json.return_value = body
     resp.raise_for_status = MagicMock()
@@ -106,23 +106,24 @@ def _call_ollama(
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Endpoint contract — POST /chat/completions
+# Endpoint contract — POST /api/chat (native Ollama endpoint)
 # ────────────────────────────────────────────────────────────────────────────
 
 
 class TestOllamaChatCompletionsEndpoint:
-    """Ollama /chat/completions endpoint and json_schema strict contract."""
+    """Ollama native /api/chat endpoint and enforced `format`-schema contract."""
 
     def test_when_ollama_called_then_exactly_one_http_request_is_made(self):
         """Criterion: the client makes exactly one call per move."""
         _, calls = _call_ollama([_skip_action()])
         assert len(calls) == 1
 
-    def test_when_ollama_called_then_request_url_contains_chat_completions(self):
-        """Criterion: LLM opponent calls Ollama via /chat/completions."""
+    def test_when_ollama_called_then_request_url_targets_api_chat(self):
+        """Criterion: LLM opponent calls Ollama via the native /api/chat endpoint."""
         _, calls = _call_ollama([_skip_action()])
         url = calls[0]["url"]
-        assert "/chat/completions" in url, f"Expected /chat/completions in URL, got: {url}"
+        assert url.endswith("/api/chat"), f"Expected URL to end with /api/chat, got: {url}"
+        assert "/v1/" not in url, f"Native endpoint must not contain /v1/, got: {url}"
 
     def test_when_ollama_called_then_request_url_does_not_contain_api_version(self):
         """Criterion: Ollama URL has no api-version query parameter."""
@@ -130,44 +131,40 @@ class TestOllamaChatCompletionsEndpoint:
         url = calls[0]["url"]
         assert "api-version=" not in url, f"URL must not contain api-version, got: {url}"
 
-    def test_when_ollama_called_then_request_body_uses_json_schema_response_format(self):
-        """Criterion: response_format type must be 'json_schema'."""
+    def test_when_ollama_called_then_request_body_uses_object_format_schema(self):
+        """Criterion: the native `format` field must be a raw object JSON schema."""
         _, calls = _call_ollama([_skip_action(), _skip_action()])
         body = calls[0]["kwargs"]["json"]
-        rf = body.get("response_format", {})
-        assert rf.get("type") == "json_schema", (
-            f"response_format.type must be 'json_schema', got: {rf}"
-        )
+        fmt = body.get("format", {})
+        assert fmt.get("type") == "object", f"format.type must be 'object', got: {fmt}"
 
-    def test_when_ollama_called_then_json_schema_strict_is_true(self):
-        """Criterion: json_schema strict must be True (enforces output shape)."""
+    def test_when_ollama_called_then_thinking_is_enabled(self):
+        """Criterion: thinking must be enabled so the `format` mask is actually applied."""
         _, calls = _call_ollama([_skip_action()])
         body = calls[0]["kwargs"]["json"]
-        rf = body.get("response_format", {})
-        inner = rf.get("json_schema", {})
-        assert inner.get("strict") is True, f"json_schema.strict must be True, got: {inner}"
+        assert body.get("think") is True, f"think must be True, got: {body.get('think')}"
 
     def test_when_ollama_called_then_request_body_contains_action_index_schema(self):
-        """The json_schema must constrain the output to contain 'action_index'."""
+        """The `format` schema must constrain the output to contain 'action_index'."""
         _, calls = _call_ollama([_skip_action()])
         body = calls[0]["kwargs"]["json"]
         raw_schema = json.dumps(body)
         assert "action_index" in raw_schema, "The request schema must reference 'action_index'"
 
-    def test_when_temperature_supplied_then_it_appears_in_request_body(self):
-        """Criterion: per-call temperature injected into the Ollama request body."""
+    def test_when_temperature_supplied_then_it_appears_in_request_options(self):
+        """Criterion: per-call temperature injected into the Ollama request options."""
         _, calls = _call_ollama([_skip_action()], temperature=0.3)
         body = calls[0]["kwargs"]["json"]
-        assert body.get("temperature") == pytest.approx(0.3), (
-            "temperature must be forwarded to the request body"
+        assert body.get("options", {}).get("temperature") == pytest.approx(0.3), (
+            "temperature must be forwarded to the request options"
         )
 
-    def test_when_top_p_supplied_then_it_appears_in_request_body(self):
-        """Criterion: per-call top_p injected into the Ollama request body."""
+    def test_when_top_p_supplied_then_it_appears_in_request_options(self):
+        """Criterion: per-call top_p injected into the Ollama request options."""
         _, calls = _call_ollama([_skip_action()], top_p=0.85)
         body = calls[0]["kwargs"]["json"]
-        assert body.get("top_p") == pytest.approx(0.85), (
-            "top_p must be forwarded to the request body"
+        assert body.get("options", {}).get("top_p") == pytest.approx(0.85), (
+            "top_p must be forwarded to the request options"
         )
 
 
@@ -240,12 +237,18 @@ class TestOllamaCredentialsFromEnv:
         headers = calls[0]["kwargs"].get("headers", {})
         assert "api-key" not in headers, "The api-key header must not be present in Ollama requests"
 
-    def test_when_base_url_env_var_set_then_request_url_starts_with_it(self):
-        """Criterion: OLLAMA_BASE_URL determines the request endpoint."""
+    def test_when_base_url_env_var_set_then_request_url_targets_its_native_root(self):
+        """Criterion: OLLAMA_BASE_URL determines the request endpoint.
+
+        The base ends in /v1 (used for the model-list probe); the native POST
+        strips it and targets ``{root}/api/chat``.
+        """
         base = "http://custom-ollama.local/v1"
         env = {**_FAKE_ENV, "OLLAMA_BASE_URL": base}
         _, calls = _call_ollama([_skip_action()], env=env)
-        assert calls[0]["url"].startswith(base), "Request URL must start with OLLAMA_BASE_URL"
+        assert calls[0]["url"] == "http://custom-ollama.local/api/chat", (
+            "Request URL must be the base's native /api/chat endpoint (base minus /v1)"
+        )
 
     def test_when_no_env_vars_set_then_request_url_defaults_to_localhost(self):
         """Criterion: missing OLLAMA_BASE_URL falls back to localhost without raising."""
@@ -261,8 +264,8 @@ class TestOllamaCredentialsFromEnv:
         ):
             call_ollama_for_action_index(_make_obs(), [_skip_action()], model="gpt-oss:120b")
 
-        assert captured[0]["url"].startswith("http://localhost:11434/v1"), (
-            "Default base URL must be http://localhost:11434/v1"
+        assert captured[0]["url"] == "http://localhost:11434/api/chat", (
+            "Default POST URL must be the native http://localhost:11434/api/chat"
         )
 
     def test_when_no_api_key_env_var_then_authorization_header_is_bearer_ollama(self):

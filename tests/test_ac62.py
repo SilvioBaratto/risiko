@@ -21,7 +21,7 @@ Criteria covered (oracle-verified as UNIT or T2):
          with its seed and config file path
 
 Criteria already covered by test_ac60.py / test_ac61.py (omitted here to avoid
-duplication): Ollama /chat/completions contract, LLM output is index, render_action_prompt,
+duplication): Ollama native /api/chat contract, LLM output is index, render_action_prompt,
 .env.example credential files, basic checkpoint save/load.
 """
 
@@ -74,9 +74,7 @@ def _skip_action() -> dict:
 def _fake_ollama_response(action_index: int = 0) -> MagicMock:
     resp = MagicMock()
     resp.status_code = 200
-    resp.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"action_index": action_index})}}]
-    }
+    resp.json.return_value = {"message": {"content": json.dumps({"action_index": action_index})}}
     resp.raise_for_status = MagicMock(return_value=None)
     return resp
 

@@ -1,7 +1,7 @@
 """Source-blind acceptance-criteria tests for issue #60 — migrated to Ollama contract.
 
 Criteria covered (oracle-verified as UNIT or T2):
-  [T2]   LLM calls /chat/completions with json_schema strict output
+  [T2]   LLM calls the native /api/chat endpoint with an enforced `format` schema
   [UNIT] Ollama credentials in .env; .env.example committed
   [UNIT] LLM output is an index into legal_actions
   [UNIT] render_action_prompt() is single source of truth; no hardcoded API key
@@ -63,9 +63,7 @@ def _make_legal_actions() -> list[dict[str, int]]:
 def _fake_httpx_response(action_index: int = 0) -> MagicMock:
     """Return a MagicMock that looks like a successful httpx response."""
     resp = MagicMock()
-    resp.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"action_index": action_index})}}]
-    }
+    resp.json.return_value = {"message": {"content": json.dumps({"action_index": action_index})}}
     resp.raise_for_status.return_value = None
     resp.status_code = 200
     return resp
@@ -111,7 +109,7 @@ class TestOllamaCredentialFiles:
 
 
 # ===========================================================================
-# Criterion [T2]: LLM calls /chat/completions with json_schema strict output
+# Criterion [T2]: LLM calls the native /api/chat with an enforced `format` schema
 # ===========================================================================
 
 
@@ -126,7 +124,7 @@ class TestOllamaApiContractStrict:
     Intercepts httpx.post and asserts on the request URL and body.
     """
 
-    def test_when_action_requested_then_url_contains_chat_completions(
+    def test_when_action_requested_then_url_targets_api_chat(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from src.agents.ollama_client import call_ollama_for_action_index
@@ -139,11 +137,13 @@ class TestOllamaApiContractStrict:
                 _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
-        assert "/chat/completions" in captured.get("url", ""), (
-            f"Request must target /chat/completions; got url={captured.get('url')!r}"
+        url = captured.get("url", "")
+        assert url.endswith("/api/chat"), (
+            f"Request must target the native /api/chat; got url={url!r}"
         )
+        assert "/v1/" not in url, f"Native endpoint must not contain /v1/; got url={url!r}"
 
-    def test_when_action_requested_then_response_format_type_is_json_schema(
+    def test_when_action_requested_then_format_type_is_object(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from src.agents.ollama_client import call_ollama_for_action_index
@@ -159,12 +159,10 @@ class TestOllamaApiContractStrict:
                 _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
-        rf = captured.get("body", {}).get("response_format", {})
-        assert rf.get("type") == "json_schema", (
-            f"response_format.type must be 'json_schema', got {rf!r}"
-        )
+        fmt = captured.get("body", {}).get("format", {})
+        assert fmt.get("type") == "object", f"format.type must be 'object', got {fmt!r}"
 
-    def test_when_action_requested_then_json_schema_strict_is_true(
+    def test_when_action_requested_then_format_schema_requires_action_index(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from src.agents.ollama_client import call_ollama_for_action_index
@@ -180,10 +178,12 @@ class TestOllamaApiContractStrict:
                 _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
-        rf = captured.get("body", {}).get("response_format", {})
-        schema_block = rf.get("json_schema", {})
-        assert schema_block.get("strict") is True, (
-            f"response_format.json_schema.strict must be True; got {schema_block!r}"
+        fmt = captured.get("body", {}).get("format", {})
+        assert "action_index" in fmt.get("required", []), (
+            f"format schema must require 'action_index'; got {fmt!r}"
+        )
+        assert fmt.get("properties", {}).get("action_index", {}).get("type") == "integer", (
+            f"action_index must be typed integer; got {fmt!r}"
         )
 
     def test_when_action_requested_then_authorization_bearer_header_is_present(
@@ -226,9 +226,9 @@ class TestOllamaApiContractStrict:
                 _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.3
             )
 
-        assert captured.get("body", {}).get("temperature") == pytest.approx(0.3), (
-            "temperature must appear in the request body"
-        )
+        assert captured.get("body", {}).get("options", {}).get("temperature") == pytest.approx(
+            0.3
+        ), "temperature must appear in the request options"
 
     def test_when_action_requested_then_top_p_is_injected_in_body(
         self, monkeypatch: pytest.MonkeyPatch
@@ -250,8 +250,8 @@ class TestOllamaApiContractStrict:
                 top_p=0.85,
             )
 
-        assert captured.get("body", {}).get("top_p") == pytest.approx(0.85), (
-            "top_p must appear in the request body when provided"
+        assert captured.get("body", {}).get("options", {}).get("top_p") == pytest.approx(0.85), (
+            "top_p must appear in the request options when provided"
         )
 
 
