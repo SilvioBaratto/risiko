@@ -11,6 +11,7 @@ import torch
 from src.config import PPOConfig, TrainingConfig
 from src.env import RisikoEnv
 from src.models.ppo import PPOTrainer
+from src.utils.safe_torch import safe_torch_load
 
 
 def _config_to_dict(config: TrainingConfig) -> dict[str, Any]:
@@ -69,7 +70,7 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
     Returns a dict with keys ``config``, ``model_state_dict``,
     ``optimizer_state_dict``.
     """
-    payload = torch.load(Path(path), weights_only=False)
+    payload = safe_torch_load(Path(path))
     payload["config"] = _config_from_dict(payload["config"])
     return payload
 
@@ -115,6 +116,6 @@ class CheckpointManager:
         Returns:
             Dict with keys: trainer_state, rng_state, episode, config.
         """
-        payload = torch.load(path, weights_only=False)
+        payload = safe_torch_load(path)
         payload["config"] = _config_from_dict(payload["config"])
         return payload
