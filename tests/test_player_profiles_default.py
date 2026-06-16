@@ -2,7 +2,7 @@
 
 Criteria covered:
   [UNIT] PlayerConfig is a frozen dataclass with player_id, temperature,
-         top_p, strategy_hint, model (default "gpt-oss:120b")
+         top_p, strategy_hint, model (default "gemma4:12b-mlx")
   [UNIT] DEFAULT_6P_PROFILES matches the six-profile table exactly
   [UNIT] load_profiles_from_yaml() round-trips config/default_6p.yaml;
          raises ValueError on out-of-range (player_id not in 0–5) or
@@ -57,10 +57,10 @@ def _write_profiles_yaml(profiles: list[PlayerConfig], path: str | pathlib.Path)
 class TestPlayerConfigDataclass:
     """Frozen dataclass contract for PlayerConfig."""
 
-    def test_when_model_omitted_then_default_is_gpt_oss_120b(self):
-        """Criterion: model field defaults to 'gpt-oss:120b'."""
+    def test_when_model_omitted_then_default_is_gemma4(self):
+        """Criterion: model field defaults to 'gemma4:12b-mlx'."""
         pc = PlayerConfig(player_id=0, temperature=0.5, top_p=0.9, strategy_hint="hint")
-        assert pc.model == "gpt-oss:120b"
+        assert pc.model == "gemma4:12b-mlx"
 
     def test_when_all_fields_supplied_then_fields_are_stored_correctly(self):
         """Criterion: PlayerConfig has player_id, temperature, top_p, strategy_hint, model."""
@@ -136,11 +136,11 @@ class TestDefault6PProfiles:
         )
         assert profile.strategy_hint == strategy_hint, f"player {player_id}: strategy_hint mismatch"
 
-    def test_when_all_default_models_checked_then_every_profile_uses_gpt_oss_120b(self):
-        """Criterion: default model for all profiles is 'gpt-oss:120b'."""
+    def test_when_all_default_models_checked_then_every_profile_uses_gemma4(self):
+        """Criterion: default model for all profiles is 'gemma4:12b-mlx'."""
         for profile in DEFAULT_6P_PROFILES:
-            assert profile.model == "gpt-oss:120b", (
-                f"player {profile.player_id} has model={profile.model!r}, expected 'gpt-oss:120b'"
+            assert profile.model == "gemma4:12b-mlx", (
+                f"player {profile.player_id} has model={profile.model!r}, expected 'gemma4:12b-mlx'"
             )
 
     def test_when_default_profiles_checked_then_no_duplicate_player_ids_exist(self):

@@ -161,7 +161,7 @@ Win rates at 6 players (random baseline ≈ 1/6 ≈ 16.7%):
 
 ## Six-player LLM profiles
 
-Defined in `config/default_6p.yaml`. Each slot uses `gpt-oss:120b` (override per slot via the `model` field) with a distinct `temperature`/`top_p` and a strategy hint injected into the prompt.
+Defined in `config/default_6p.yaml`. Each slot defaults to `gemma4:12b-mlx` (local, free) with a distinct `temperature`/`top_p` and a strategy hint injected into the prompt. Override the model **per slot** via the `model` field, or **uniformly for all slots** at launch with `risiko-rl train --model <name>` (e.g. `--model glm-5.1:cloud`). The requested model is pre-flight checked against the Ollama server's model list, so a typo fails fast instead of silently degrading every opponent to random.
 
 | Player | Temp | Top-p | Strategy hint |
 |---|---|---|---|

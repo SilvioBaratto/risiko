@@ -12,13 +12,11 @@ import torch
 
 from src.agents.base import Agent
 from src.agents.ollama_client import call_ollama_for_action_index
-from src.agents.player_config import PlayerConfig
+from src.agents.player_config import DEFAULT_MODEL, PlayerConfig
 from src.agents.random_agent import RandomAgent
 from src.utils.log import get_logger
 
 logger = get_logger("llm_opponent")
-
-DEFAULT_MODEL = "gpt-oss:120b"
 
 
 class LLMOpponent(Agent):

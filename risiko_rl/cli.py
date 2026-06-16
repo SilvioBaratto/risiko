@@ -14,7 +14,7 @@ _project_root = Path(__file__).parent.parent.resolve()
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from src.config import load_config, merge_cli_overrides  # noqa: E402
+from src.config import TrainingConfig, load_config, merge_cli_overrides  # noqa: E402
 from src.utils.env import ensure_env_loaded  # noqa: E402
 from src.utils.log import setup_logging  # noqa: E402
 
@@ -23,6 +23,41 @@ from .agent_loader import load_agent  # noqa: E402, I001
 ensure_env_loaded()
 
 app = typer.Typer(help="Risiko RL — train and evaluate PPO agents")
+
+
+def _preflight_validate_model(cfg: TrainingConfig) -> None:
+    """Fail fast if an LLM opponent model is not available on the Ollama server.
+
+    Only runs in LLM mode (``self_play.llm_profiles_path`` set). Resolves the
+    effective model set — the ``--model`` override if given, else the distinct
+    models declared in the profile YAML — and checks each against the live
+    model list. If the server can't be queried, logs a warning and proceeds
+    (cloud ``/v1/models`` may differ); only a definitively-missing model aborts.
+    """
+    from src.agents.ollama_client import list_ollama_models
+    from src.agents.player_config import load_profiles_from_yaml
+
+    profiles_path = cfg.self_play.llm_profiles_path
+    if not profiles_path:
+        return
+
+    if cfg.self_play.llm_model:
+        wanted = {cfg.self_play.llm_model}
+    else:
+        wanted = {p.model for p in load_profiles_from_yaml(profiles_path)}
+
+    available = list_ollama_models()
+    if available is None:
+        typer.echo("Warning: could not query Ollama model list; skipping model pre-flight check.")
+        return
+
+    missing = sorted(wanted - available)
+    if missing:
+        raise typer.BadParameter(
+            f"Model(s) not available on Ollama server: {', '.join(missing)}. "
+            f"Available: {', '.join(sorted(available))}. "
+            "Pull the model (`ollama pull <name>`) or pass a valid --model."
+        )
 
 
 @app.command()
@@ -59,6 +94,14 @@ def train(
         int | None,
         typer.Option("--timesteps", help="Total training timesteps (overrides config)"),
     ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            "-m",
+            help="Ollama model for all LLM opponents (overrides YAML profiles)",
+        ),
+    ] = None,
     override: Annotated[
         list[str] | None,
         typer.Option(
@@ -80,6 +123,8 @@ def train(
         overrides["device"] = device
     if timesteps is not None:
         overrides["total_timesteps"] = str(timesteps)
+    if model is not None:
+        overrides["self_play.llm_model"] = model
     if override:
         for o in override:
             if "=" not in o:
@@ -88,6 +133,7 @@ def train(
             overrides[key] = value
 
     cfg = merge_cli_overrides(cfg, overrides)
+    _preflight_validate_model(cfg)
     typer.echo(f"Training with config: {cfg}")
 
     from training.self_play import SelfPlayTrainer
