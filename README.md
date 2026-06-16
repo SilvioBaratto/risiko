@@ -103,6 +103,9 @@ risiko-rl train --override ppo.lr=1e-4 --override ppo.gamma=0.97
 
 # Resume from checkpoint, save to custom dir
 risiko-rl train --config config/default.yaml --checkpoint-dir models/ --seed 0
+
+# Set the Ollama model for all LLM opponents (pre-flight checked against the server)
+risiko-rl train --config config/llm_6p.yaml --model glm-5.1:cloud
 ```
 
 ### `evaluate`
