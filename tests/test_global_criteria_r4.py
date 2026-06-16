@@ -90,9 +90,7 @@ class TestLLMOutputIsIndex:
         resp = mock.MagicMock()
         resp.status_code = 200
         resp.raise_for_status = mock.MagicMock()
-        resp.json.return_value = {
-            "choices": [{"message": {"content": f'{{"action_index": {action_index}}}'}}]
-        }
+        resp.json.return_value = {"message": {"content": f'{{"action_index": {action_index}}}'}}
         return resp
 
     def _call_with_mocked_http(self, action_index: int, legal_actions: list) -> object:

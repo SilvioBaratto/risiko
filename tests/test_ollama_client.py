@@ -4,9 +4,10 @@ Derived exclusively from acceptance criteria; no implementation source was read.
 All HTTP calls and env-loading are mocked. No real .env is read.
 
 Criteria covered:
-- call_ollama_for_action_index() POSTs to {base}/chat/completions with NO api-version query string
+- call_ollama_for_action_index() POSTs to the native {root}/api/chat endpoint
 - Auth uses Authorization: Bearer <key> header (NOT api-key)
-- Request body sets response_format json_schema with strict:true
+- Request body sets the native `format` to the action_index JSON schema, with
+  thinking enabled (think=true) so the schema mask is honoured (ollama#15260)
 - Returns an index in [0, len(legal_actions)) or None on empty/unparseable/out-of-range reply
 - Per-call temperature and top_p injected verbatim; top_p omitted when None
 - When OLLAMA_BASE_URL / OLLAMA_API_KEY are unset, falls back to defaults (localhost + "ollama")
@@ -58,7 +59,7 @@ def _fake_response(content: str | None) -> MagicMock:
     resp = MagicMock()
     resp.raise_for_status.return_value = None
     resp.json.return_value = {
-        "choices": [{"message": {"content": content or ""}}],
+        "message": {"content": content or ""},
     }
     return resp
 
@@ -103,13 +104,19 @@ def _call(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_when_ollama_called_then_posts_to_url_containing_chat_completions():
-    """call_ollama_for_action_index() must POST to a URL containing /chat/completions."""
+def test_when_ollama_called_then_posts_to_native_api_chat_endpoint():
+    """call_ollama_for_action_index() must POST to the native /api/chat endpoint.
+
+    The OpenAI-compat /v1 endpoint only honours `format` as loose JSON mode and
+    ignores the schema for reasoning models (ollama#10937); the native endpoint
+    enforces it via XGrammar.
+    """
     _, mock_post = _call(["a", "b"])
 
     assert mock_post.called
     url = mock_post.call_args.args[0]
-    assert "/chat/completions" in url
+    assert url.endswith("/api/chat")
+    assert "/v1/" not in url
 
 
 def test_when_ollama_called_then_url_does_not_contain_api_version_query_param():
@@ -136,21 +143,23 @@ def test_when_ollama_called_then_no_api_key_header_is_set():
     assert "api-key" not in headers
 
 
-def test_when_ollama_called_then_response_format_type_is_json_schema():
-    """Request body must set response_format.type to 'json_schema'."""
+def test_when_ollama_called_then_format_is_action_index_schema():
+    """Request body must set the native `format` to the action_index JSON schema."""
     _, mock_post = _call(["a", "b"])
 
     body = mock_post.call_args.kwargs.get("json", {})
-    assert body.get("response_format", {}).get("type") == "json_schema"
+    fmt = body.get("format", {})
+    assert fmt.get("type") == "object"
+    assert fmt.get("properties", {}).get("action_index", {}).get("type") == "integer"
+    assert "action_index" in fmt.get("required", [])
 
 
-def test_when_ollama_called_then_json_schema_strict_is_true():
-    """Request body must set response_format.json_schema.strict to True."""
+def test_when_ollama_called_then_thinking_is_enabled():
+    """Thinking must stay ON: think=false breaks `format` enforcement (ollama#15260)."""
     _, mock_post = _call(["a", "b"])
 
     body = mock_post.call_args.kwargs.get("json", {})
-    schema_obj = body.get("response_format", {}).get("json_schema", {})
-    assert schema_obj.get("strict") is True
+    assert body.get("think") is True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -220,27 +229,27 @@ def test_when_response_content_lacks_action_index_field_then_none_is_returned():
 
 
 def test_when_temperature_provided_then_it_appears_in_request_body():
-    """Temperature must be injected verbatim into the POST body."""
+    """Temperature must be injected verbatim into the native `options` block."""
     _, mock_post = _call(["a"], temperature=0.3, resp=_resp(0))
 
     body = mock_post.call_args.kwargs.get("json", {})
-    assert body.get("temperature") == pytest.approx(0.3)
+    assert body.get("options", {}).get("temperature") == pytest.approx(0.3)
 
 
 def test_when_top_p_provided_then_it_appears_in_request_body():
-    """top_p must be injected verbatim into the POST body."""
+    """top_p must be injected verbatim into the native `options` block."""
     _, mock_post = _call(["a"], top_p=0.85, resp=_resp(0))
 
     body = mock_post.call_args.kwargs.get("json", {})
-    assert body.get("top_p") == pytest.approx(0.85)
+    assert body.get("options", {}).get("top_p") == pytest.approx(0.85)
 
 
 def test_when_top_p_is_none_then_top_p_key_is_absent_from_body():
-    """When top_p=None, the 'top_p' key must not appear in the POST body."""
+    """When top_p=None, the 'top_p' key must not appear in the `options` block."""
     _, mock_post = _call(["a"], top_p=None, resp=_resp(0))
 
     body = mock_post.call_args.kwargs.get("json", {})
-    assert "top_p" not in body
+    assert "top_p" not in body.get("options", {})
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -262,8 +271,8 @@ def test_when_base_url_env_var_missing_then_defaults_to_localhost():
         )
 
     url = mock_post.call_args.args[0]
-    assert url.startswith("http://localhost:11434/v1"), (
-        f"Expected localhost fallback URL, got: {url!r}"
+    assert url == "http://localhost:11434/api/chat", (
+        f"Expected localhost native /api/chat fallback URL, got: {url!r}"
     )
 
 
@@ -335,7 +344,9 @@ def test_when_any_valid_temperature_given_then_it_appears_verbatim_in_body(tempe
         )
 
     body = mock_post.call_args.kwargs.get("json", {})
-    assert body.get("temperature") == pytest.approx(temperature, rel=1e-6, abs=1e-9)
+    assert body.get("options", {}).get("temperature") == pytest.approx(
+        temperature, rel=1e-6, abs=1e-9
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -352,6 +363,19 @@ class TestExtractActionIndex:
         from src.agents.ollama_client import _extract_action_index
 
         assert _extract_action_index('{"action_index": 7}') == 7
+
+    def test_when_bare_integer_then_index_is_extracted(self):
+        """Cloud models flatten the single-property schema to a bare int."""
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index("0") == 0
+        assert _extract_action_index("  42 ") == 42
+
+    def test_when_bare_boolean_then_returns_none(self):
+        """`true`/`false` are valid JSON ints-ish but must NOT parse as an index."""
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index("true") is None
 
     def test_when_json_fenced_with_lang_tag_then_index_is_extracted(self):
         from src.agents.ollama_client import _extract_action_index

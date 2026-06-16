@@ -36,7 +36,7 @@ _PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 def _fake_httpx_response(action_index: int = 0) -> MagicMock:
     """Return a mock that looks like an httpx.Response from Ollama."""
     content = json.dumps({"action_index": action_index})
-    body = {"choices": [{"message": {"content": content}}]}
+    body = {"message": {"content": content}}
     resp = MagicMock()
     resp.status_code = 200
     resp.json.return_value = body
@@ -85,13 +85,13 @@ def _write_player_profiles(path: pathlib.Path, n: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# [T2] LLM opponent calls Ollama via /chat/completions
-#      with json_schema strict output
+# [T2] LLM opponent calls Ollama via the native /api/chat endpoint
+#      with an enforced JSON-schema `format` field
 # ---------------------------------------------------------------------------
 
 
 class TestOllamaApiContract:
-    """The Ollama client must POST to /chat/completions with json_schema strict."""
+    """The Ollama client must POST to the native /api/chat with an enforced `format`."""
 
     def _call_with_capture(self, monkeypatch) -> dict:
         """Call call_ollama_for_action_index; return the captured httpx.post kwargs."""
@@ -118,38 +118,36 @@ class TestOllamaApiContract:
             )
         return captured
 
-    def test_when_action_requested_then_url_contains_chat_completions(self, monkeypatch) -> None:
-        """POST URL must contain /chat/completions."""
+    def test_when_action_requested_then_url_targets_api_chat(self, monkeypatch) -> None:
+        """POST URL must target the native /api/chat endpoint."""
         captured = self._call_with_capture(monkeypatch)
-        assert "/chat/completions" in captured["url"], (
-            f"Expected /chat/completions in URL; got {captured['url']!r}"
+        assert captured["url"].endswith("/api/chat"), (
+            f"Expected URL to end with /api/chat; got {captured['url']!r}"
+        )
+        assert "/v1/" not in captured["url"], (
+            f"Native endpoint must not contain /v1/; got {captured['url']!r}"
         )
 
-    def test_when_action_requested_then_response_format_type_is_json_schema(
-        self, monkeypatch
-    ) -> None:
-        """Request body must have response_format.type == 'json_schema'."""
+    def test_when_action_requested_then_format_type_is_object(self, monkeypatch) -> None:
+        """Request body must have format.type == 'object' (raw schema)."""
         captured = self._call_with_capture(monkeypatch)
         body = captured["kwargs"].get("json", {})
-        rf = body.get("response_format", {})
-        assert rf.get("type") == "json_schema", (
-            f"response_format.type must be 'json_schema'; got {rf!r}"
-        )
+        fmt = body.get("format", {})
+        assert fmt.get("type") == "object", f"format.type must be 'object'; got {fmt!r}"
 
-    def test_when_action_requested_then_json_schema_strict_is_true(self, monkeypatch) -> None:
-        """Request body must have response_format.json_schema.strict == True."""
+    def test_when_action_requested_then_thinking_is_enabled(self, monkeypatch) -> None:
+        """Request body must enable thinking so the `format` mask is applied."""
         captured = self._call_with_capture(monkeypatch)
         body = captured["kwargs"].get("json", {})
-        schema_wrapper = body.get("response_format", {}).get("json_schema", {})
-        assert schema_wrapper.get("strict") is True, f"strict must be True; got {schema_wrapper!r}"
+        assert body.get("think") is True, f"think must be True; got {body.get('think')!r}"
 
     def test_when_action_requested_then_schema_constrains_action_index_property(
         self, monkeypatch
     ) -> None:
-        """The json_schema must define an 'action_index' property."""
+        """The `format` schema must define an 'action_index' property."""
         captured = self._call_with_capture(monkeypatch)
         body = captured["kwargs"].get("json", {})
-        schema = body.get("response_format", {}).get("json_schema", {}).get("schema", {})
+        schema = body.get("format", {})
         assert "action_index" in schema.get("properties", {}), (
             f"Schema must declare 'action_index'; got {schema!r}"
         )
@@ -233,9 +231,7 @@ class TestOllamaCredentials:
             captured["headers"] = kwargs.get("headers", {})
             resp = MagicMock()
             resp.status_code = 200
-            resp.json.return_value = {
-                "choices": [{"message": {"content": json.dumps({"action_index": 0})}}]
-            }
+            resp.json.return_value = {"message": {"content": json.dumps({"action_index": 0})}}
             resp.raise_for_status = MagicMock(return_value=None)
             return resp
 
