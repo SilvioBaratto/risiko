@@ -28,3 +28,10 @@ class RewardConfig:
     dense_army_ratio: float = 0.005
     dense_elimination_bonus: float = 0.1
     invalid_action_penalty: float = -0.01
+    # Terminal signal when a game hits the turn cap without an elimination
+    # (a draw). The learner's final transition receives
+    # ``terminal_margin_weight * margin`` where ``margin`` is the territory
+    # lead over the strongest opponent, normalised to [-1, 1]. Gives the value
+    # head a graded win/loss target on games that never resolve, instead of a
+    # bootstrap-across-games gap. Set to 0.0 to disable (pure sparse).
+    terminal_margin_weight: float = 0.5

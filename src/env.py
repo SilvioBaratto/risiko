@@ -52,6 +52,7 @@ class GameState:
     phase: int = PHASE_REINFORCE
     reinforcements_remaining: int = 0
     turn_capture: int = 0
+    turns_elapsed: int = 0
     eliminated: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
     n_players: int = 0
     last_capture_dice: int = 0
@@ -176,6 +177,7 @@ class RisikoEnv(gym.Env):
             phase=PHASE_REINFORCE,
             reinforcements_remaining=0,
             turn_capture=0,
+            turns_elapsed=0,
             eliminated=np.zeros(self.n_players, dtype=np.int32),
             n_players=self.n_players,
             rng=rng,
@@ -505,6 +507,7 @@ class RisikoEnv(gym.Env):
         prev_player = s.current_player
         if s.turn_capture and len(s.cards[s.current_player]) < MAX_CARDS:
             self._draw_card(s.current_player)
+        s.turns_elapsed += 1
         self._next_player()
         _log.debug(
             "turn end — player=%d → player=%d | territories=%s",
@@ -551,6 +554,25 @@ class RisikoEnv(gym.Env):
         elif len(active) <= 2:
             _log.debug("near-end — active=%s eliminated=%s", active, s.eliminated.tolist())
         return len(active) <= 1
+
+    def territory_margin(self, player: int) -> float:
+        """Return ``player``'s territory lead over the strongest opponent.
+
+        Normalised to ``[-1, 1]`` by the board size. Used to give a graded
+        terminal signal on games that hit the turn cap without an elimination
+        (a draw): +1 means the player owns every territory, -1 means it owns
+        none while a rival owns all. The dense per-step rewards never encode
+        "who was ahead when the clock ran out", so without this the value head
+        sees no win/loss target on unresolved games.
+        """
+        s = self.state
+        if s.territory_owner.size == 0 or player >= s.n_players:
+            return 0.0
+        counts = np.bincount(s.territory_owner, minlength=s.n_players)
+        own = int(counts[player])
+        opponents = [int(counts[p]) for p in range(s.n_players) if p != player]
+        best_opp = max(opponents) if opponents else 0
+        return (own - best_opp) / NUM_TERRITORIES
 
     def _compute_reward(self, player: int, prev: dict[str, Any]) -> float:
         cfg = self.reward_config

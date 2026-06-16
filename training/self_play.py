@@ -289,38 +289,71 @@ class SelfPlayTrainer:
         Forced-skip transitions (empty legal_actions → NaN log_prob/value) are
         skipped: they aren't policy choices, so they shouldn't contribute to
         the gradient.
+
+        The learner's *last* transition is marked ``done=True`` so GAE stops the
+        value bootstrap at the game boundary — the buffer concatenates many
+        games, so without a done flag advantages bleed across them. That
+        terminal transition also receives the game's outcome reward: a win is
+        already encoded by the env's ``sparse_win`` on the winning move; a loss
+        and a draw are not (the loss fires on the *opponent's* step, and a
+        capped draw fires nothing), so we add ``sparse_loss`` or the graded
+        territory ``margin`` reward respectively. Without this the value head
+        never sees a terminal win/loss target and its loss collapses to ~0.
         """
         import math as _math
 
-        added = 0
+        learner_traj = [
+            t
+            for t in result.trajectories
+            if int(t.obs["current_player"]) == _LEARNER_ID
+            and not _math.isnan(t.log_prob)
+            and not _math.isnan(t.value)
+        ]
         total_learner = sum(
             1 for t in result.trajectories if int(t.obs["current_player"]) == _LEARNER_ID
         )
-        for t in result.trajectories:
+        terminal_idx = len(learner_traj) - 1
+        terminal_extra = self._terminal_outcome_reward(result)
+
+        added = 0
+        for i, t in enumerate(learner_traj):
             if len(buffer) >= buffer.capacity:
                 break
-            if int(t.obs["current_player"]) != _LEARNER_ID:
-                continue
-            if _math.isnan(t.log_prob) or _math.isnan(t.value):
-                continue
+            is_terminal = i == terminal_idx
+            reward = t.reward + (terminal_extra if is_terminal else 0.0)
             added += 1
             buffer.add(
                 t.obs,
                 {k: torch.tensor(v, device=self._device) for k, v in t.action.items()},
-                t.reward,
-                False,
+                reward,
+                is_terminal,
                 t.value,
                 t.log_prob,
                 t.legal_actions,
             )
         _log.debug(
-            "episode=%d transitions: learner=%d added=%d buffer=%d/%d",
+            "episode=%d transitions: learner=%d added=%d buffer=%d/%d terminal_extra=%.3f",
             self._episode,
             total_learner,
             added,
             len(buffer),
             buffer.capacity,
+            terminal_extra,
         )
+
+    def _terminal_outcome_reward(self, result: GameResult) -> float:
+        """Outcome reward added to the learner's final transition.
+
+        - learner won  → 0.0 (``sparse_win`` already on the winning move)
+        - draw (cap hit, ``winner is None``) → graded territory margin
+        - learner lost → ``sparse_loss``
+        """
+        cfg = self._env.reward_config
+        if result.winner == _LEARNER_ID:
+            return 0.0
+        if result.winner is None:
+            return cfg.terminal_margin_weight * self._env.territory_margin(_LEARNER_ID)
+        return cfg.sparse_loss
 
     # ------------------------------------------------------------------
     # PPO update and logging
