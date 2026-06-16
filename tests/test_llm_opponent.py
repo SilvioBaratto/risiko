@@ -145,7 +145,7 @@ class TestConfiguration:
 
     def test_default_values(self) -> None:
         a = LLMOpponent()
-        assert a._model == "gpt-oss:120b"
+        assert a._model == "gemma4:12b-mlx"
         assert a._timeout == 30.0
         assert a._temperature == 0.1
 
@@ -226,7 +226,7 @@ class TestOllamaWiring:
             a.act(dummy_obs, dummy_legal)
         mock_call.assert_called_once()
         kwargs = mock_call.call_args.kwargs
-        assert kwargs["model"] == "gpt-oss:120b"
+        assert kwargs["model"] == "gemma4:12b-mlx"
         assert kwargs["base_url"] == "http://localhost:11434/v1"
         assert kwargs["api_key"] == "test-key"
         assert kwargs["temperature"] == pytest.approx(0.7)

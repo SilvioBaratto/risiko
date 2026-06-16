@@ -134,6 +134,36 @@ def call_ollama_for_action_index(
     return _parse_index(data, legal_actions, model, elapsed)
 
 
+def list_ollama_models(
+    base_url: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 10.0,
+) -> set[str] | None:
+    """Return the set of model ids the Ollama server advertises, or ``None``.
+
+    Queries the OpenAI-compatible ``GET {base}/models`` endpoint. ``base_url`` /
+    ``api_key`` fall back to ``OLLAMA_BASE_URL`` / ``OLLAMA_API_KEY`` then the
+    local defaults — same resolution as :func:`call_ollama_for_action_index`.
+
+    Returns ``None`` (rather than raising) on any connection / HTTP / parse
+    error, so callers can treat "unknown" as "skip validation and proceed"
+    instead of crashing a valid run on a flaky probe.
+    """
+    ensure_env_loaded()
+    base = (base_url or os.environ.get(ENV_BASE_URL) or DEFAULT_BASE_URL).rstrip("/")
+    key = api_key or os.environ.get(ENV_API_KEY) or DEFAULT_API_KEY
+    url = f"{base}/models"
+    headers = {"Authorization": f"Bearer {key}"}
+    try:
+        response = httpx.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        return {entry["id"] for entry in data.get("data", []) if "id" in entry}
+    except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
+        _log.warning("Could not list Ollama models from %s: %s", url, exc)
+        return None
+
+
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 _INDEX_RE = re.compile(r'"?action_index"?\s*[:=]\s*(-?\d+)')
 
@@ -194,4 +224,10 @@ def _parse_index(
     return None
 
 
-__all__ = ["call_ollama_for_action_index", "ENV_BASE_URL", "ENV_API_KEY", "DEFAULT_BASE_URL"]
+__all__ = [
+    "call_ollama_for_action_index",
+    "list_ollama_models",
+    "ENV_BASE_URL",
+    "ENV_API_KEY",
+    "DEFAULT_BASE_URL",
+]

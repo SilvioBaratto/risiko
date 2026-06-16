@@ -63,6 +63,7 @@ class SelfPlayConfig:
     eval_games: int = 10
     n_players: int = 2
     llm_profiles_path: str | None = None
+    llm_model: str | None = None  # uniform model override for all LLM opponents
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import random
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,7 @@ _OPPONENT_ID: int = 1
 def _build_llm_opponents(
     n_players: int,
     llm_profiles_path: str | None,
+    llm_model: str | None = None,
 ) -> list[LLMOpponent | None]:
     """Build N-1 opponent slots from a profile YAML or return None fillers.
 
@@ -44,6 +46,8 @@ def _build_llm_opponents(
         n_players: Total number of players (learner + opponents).
         llm_profiles_path: Path to a YAML profile list, or ``None`` for
             self-play / random-filler mode.
+        llm_model: If set, override every profile's model with this name,
+            keeping each slot's temperature / top_p / strategy_hint.
 
     Returns:
         A list of ``n_players - 1`` items: ``LLMOpponent`` instances when
@@ -53,10 +57,17 @@ def _build_llm_opponents(
     if not llm_profiles_path:
         return [None] * n_opponents
     profiles = load_profiles_from_yaml(Path(llm_profiles_path))
+    if llm_model:
+        profiles = [dataclasses.replace(p, model=llm_model) for p in profiles]
     opponents: list[LLMOpponent | None] = [
         LLMOpponent(player_config=profiles[i % len(profiles)]) for i in range(n_opponents)
     ]
-    _log.info("LLM mode: loaded %d opponents from %s", n_opponents, llm_profiles_path)
+    _log.info(
+        "LLM mode: loaded %d opponents from %s (model=%s)",
+        n_opponents,
+        llm_profiles_path,
+        llm_model or "per-profile",
+    )
     return opponents
 
 
@@ -231,6 +242,7 @@ class SelfPlayTrainer:
         slots = _build_llm_opponents(
             self._cfg.self_play.n_players,
             self._cfg.self_play.llm_profiles_path,
+            self._cfg.self_play.llm_model,
         )
         if not self._cfg.self_play.llm_profiles_path:
             return None
