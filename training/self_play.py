@@ -104,6 +104,7 @@ class SelfPlayTrainer:
         self._logger = TensorBoardLogger(self._log_dir)
         self._episode = 0
         self._best_metric_value = 0.0
+        self._buffer: RolloutBuffer | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -111,6 +112,7 @@ class SelfPlayTrainer:
 
     def train(self) -> None:
         """Run the self-play training loop."""
+        self._buffer = self._make_buffer()
         self._maybe_resume()
         self._log_seed()
         if self._llm_opponents:
@@ -126,7 +128,7 @@ class SelfPlayTrainer:
             self._device,
             mode,
         )
-        buffer = self._make_buffer()
+        buffer = self._buffer
         last_result: GameResult | None = None
         pbar = tqdm(
             total=self._cfg.total_timesteps,
@@ -177,6 +179,8 @@ class SelfPlayTrainer:
             "opponent_state": self._opponent_net.state_dict(),
             "best_metric_value": self._best_metric_value,
         }
+        if self._buffer is not None:
+            payload["buffer_state"] = self._buffer.state_dict()
         torch.save(payload, path)
 
     def load_checkpoint(self, path: Path) -> None:
@@ -188,6 +192,9 @@ class SelfPlayTrainer:
         self._episode = payload.get("episode", 0)
         self._best_metric_value = payload.get("best_metric_value", 0.0)
         self._restore_rng(payload.get("rng_state", {}))
+        buffer_state = payload.get("buffer_state")
+        if buffer_state is not None and self._buffer is not None:
+            self._buffer.load_state_dict(buffer_state, device=self._device)
 
     # ------------------------------------------------------------------
     # Construction

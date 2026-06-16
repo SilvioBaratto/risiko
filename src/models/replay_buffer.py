@@ -163,6 +163,42 @@ class RolloutBuffer:
         self.advantages = None
         self.returns = None
 
+    def state_dict(self) -> dict:
+        """Serialize stored transitions for checkpointing.
+
+        Only the raw transitions are persisted; ``advantages`` / ``returns``
+        are transient (recomputed by ``compute_advantages`` immediately before
+        each update) so they are intentionally omitted. Action tensors are
+        moved to CPU for device-independent reload.
+        """
+        return {
+            "observations": list(self.observations),
+            "actions": [{k: v.detach().cpu() for k, v in a.items()} for a in self.actions],
+            "rewards": list(self.rewards),
+            "dones": list(self.dones),
+            "values": list(self.values),
+            "log_probs": list(self.log_probs),
+            "legal_actions": list(self.legal_actions),
+        }
+
+    def load_state_dict(self, state: dict, device: str | None = None) -> None:
+        """Restore transitions saved by :meth:`state_dict`.
+
+        Args:
+            state: Payload produced by :meth:`state_dict`.
+            device: Target device for action tensors; defaults to ``self.device``.
+        """
+        dev = device or self.device
+        self.observations = list(state["observations"])
+        self.actions = [{k: v.to(dev) for k, v in a.items()} for a in state["actions"]]
+        self.rewards = list(state["rewards"])
+        self.dones = list(state["dones"])
+        self.values = list(state["values"])
+        self.log_probs = list(state["log_probs"])
+        self.legal_actions = list(state["legal_actions"])
+        self.advantages = None
+        self.returns = None
+
 
 def _build_mask_tensor(
     legal_actions: list[dict[str, int]],
