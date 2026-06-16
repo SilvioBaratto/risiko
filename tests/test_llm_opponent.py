@@ -146,7 +146,7 @@ class TestConfiguration:
     def test_default_values(self) -> None:
         a = LLMOpponent()
         assert a._model == "gemma4:12b-mlx"
-        assert a._timeout == 30.0
+        assert a._timeout == 120.0
         assert a._temperature == 0.1
 
     def test_custom_values(self) -> None:

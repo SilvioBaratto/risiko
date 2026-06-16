@@ -46,7 +46,7 @@ ENV_API_KEY = "OLLAMA_API_KEY"
 
 DEFAULT_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_API_KEY = "ollama"  # placeholder; Ollama ignores it for local serving
-DEFAULT_MAX_TOKENS = 4096  # reasoning models (gpt-oss, glm) think before the JSON; leave room
+DEFAULT_MAX_TOKENS = 8192  # reasoning models (gpt-oss, glm) think before the JSON; leave room
 
 _RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
@@ -70,7 +70,7 @@ def call_ollama_for_action_index(
     model: str,
     base_url: str | None = None,
     api_key: str | None = None,
-    timeout: float = 30.0,
+    timeout: float = 120.0,
     temperature: float = 0.1,
     top_p: float | None = None,
     strategy_hint: str | None = None,
@@ -196,12 +196,28 @@ def _parse_index(
 ) -> int | None:
     """Extract and range-check ``action_index`` from a chat-completions reply."""
     choices = data.get("choices") or []
-    content = choices[0].get("message", {}).get("content", "") if choices else ""
+    message = choices[0].get("message", {}) if choices else {}
+    content = message.get("content", "") or ""
+    finish_reason = choices[0].get("finish_reason") if choices else None
     usage = data.get("usage", {})
     completion_tokens = usage.get("completion_tokens", 0)
     if not content:
-        _log.warning("Ollama returned empty content (model=%s, %.2fs)", model, elapsed)
-        return None
+        # Reasoning models (glm, gpt-oss) sometimes emit the answer only in a
+        # `reasoning` / `reasoning_content` field, or exhaust max_tokens on the
+        # thinking trace (finish_reason="length") and return empty content.
+        # Try the reasoning text before giving up — the index regex still works.
+        reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
+        if reasoning:
+            content = reasoning
+        else:
+            _log.warning(
+                "Ollama returned empty content (model=%s, %.2fs, finish_reason=%s, tok=%d)",
+                model,
+                elapsed,
+                finish_reason,
+                completion_tokens,
+            )
+            return None
     idx = _extract_action_index(content)
     if idx is None:
         _log.warning("Ollama reply has no usable action_index | raw=%r", content)

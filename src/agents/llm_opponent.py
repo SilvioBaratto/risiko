@@ -25,7 +25,7 @@ class LLMOpponent(Agent):
     def __init__(
         self,
         model: str = DEFAULT_MODEL,
-        timeout: float = 30.0,
+        timeout: float = 120.0,
         temperature: float = 0.1,
         *,
         top_p: float = 0.9,
