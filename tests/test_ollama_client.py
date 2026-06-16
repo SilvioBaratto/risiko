@@ -336,3 +336,75 @@ def test_when_any_valid_temperature_given_then_it_appears_verbatim_in_body(tempe
 
     body = mock_post.call_args.kwargs.get("json", {})
     assert body.get("temperature") == pytest.approx(temperature, rel=1e-6, abs=1e-9)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Tolerant parsing: not every model honours response_format json_schema.
+# Reasoning/instruct models may wrap the answer in a ```json fence or add prose;
+# _extract_action_index must still recover a usable action_index.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestExtractActionIndex:
+    """Direct unit tests for the tolerant action_index extractor."""
+
+    def test_when_strict_json_then_index_is_extracted(self):
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index('{"action_index": 7}') == 7
+
+    def test_when_json_fenced_with_lang_tag_then_index_is_extracted(self):
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index('```json\n{"action_index": 51}\n```') == 51
+
+    def test_when_json_fenced_without_lang_tag_then_index_is_extracted(self):
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index('```\n{"action_index": 3}\n```') == 3
+
+    def test_when_prose_surrounds_json_then_regex_fallback_extracts_index(self):
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index("I choose action_index: 12 because it is best.") == 12
+
+    def test_when_extra_keys_present_then_index_is_still_extracted(self):
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index('{"reason": "expand", "action_index": 4}') == 4
+
+    def test_when_no_index_anywhere_then_returns_none(self):
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index("sorry, I cannot decide") is None
+
+    def test_when_empty_string_then_returns_none(self):
+        from src.agents.ollama_client import _extract_action_index
+
+        assert _extract_action_index("") is None
+
+
+class TestTolerantParsingThroughClient:
+    """The client recovers fenced/prose replies into a legal in-range index."""
+
+    def test_when_reply_is_fenced_json_then_client_returns_in_range_index(self):
+        legal = ["a", "b", "c"]
+        result, _ = _call(legal, resp=_fake_response('```json\n{"action_index": 2}\n```'))
+        assert result == 2
+
+    def test_when_fenced_index_out_of_range_then_client_returns_none(self):
+        legal = ["a", "b"]
+        result, _ = _call(legal, resp=_fake_response('```json\n{"action_index": 9}\n```'))
+        assert result is None
+
+    def test_when_reply_has_prose_then_client_recovers_index(self):
+        legal = ["a", "b", "c", "d"]
+        result, _ = _call(legal, resp=_fake_response("Best move is action_index = 3."))
+        assert result == 3
+
+
+def test_default_max_tokens_leaves_reasoning_headroom():
+    """Default token budget must be large enough for reasoning models to answer."""
+    from src.agents.ollama_client import DEFAULT_MAX_TOKENS
+
+    assert DEFAULT_MAX_TOKENS >= 2048

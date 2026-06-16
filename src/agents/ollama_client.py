@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Any
 
@@ -45,7 +46,7 @@ ENV_API_KEY = "OLLAMA_API_KEY"
 
 DEFAULT_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_API_KEY = "ollama"  # placeholder; Ollama ignores it for local serving
-DEFAULT_MAX_TOKENS = 512  # leaves headroom for gpt-oss reasoning before the JSON answer
+DEFAULT_MAX_TOKENS = 4096  # reasoning models (gpt-oss, glm) think before the JSON; leave room
 
 _RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
@@ -133,6 +134,30 @@ def call_ollama_for_action_index(
     return _parse_index(data, legal_actions, model, elapsed)
 
 
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+_INDEX_RE = re.compile(r'"?action_index"?\s*[:=]\s*(-?\d+)')
+
+
+def _extract_action_index(content: str) -> int | None:
+    """Pull an integer ``action_index`` out of a model reply, tolerantly.
+
+    Not all Ollama models honour ``response_format`` json_schema; reasoning
+    models in particular wrap the answer in a ```json fence or add prose. Try
+    strict JSON first, then a fenced-JSON unwrap, then a regex fallback.
+    """
+    candidates = [content.strip()]
+    fenced = _FENCE_RE.search(content)
+    if fenced:
+        candidates.append(fenced.group(1).strip())
+    for candidate in candidates:
+        try:
+            return int(json.loads(candidate)["action_index"])
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+            continue
+    match = _INDEX_RE.search(content)
+    return int(match.group(1)) if match else None
+
+
 def _parse_index(
     data: dict[str, Any],
     legal_actions: list[dict[str, int]],
@@ -147,10 +172,9 @@ def _parse_index(
     if not content:
         _log.warning("Ollama returned empty content (model=%s, %.2fs)", model, elapsed)
         return None
-    try:
-        idx = int(json.loads(content)["action_index"])
-    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-        _log.warning("Ollama reply not parseable as {action_index: int}: %s | raw=%r", e, content)
+    idx = _extract_action_index(content)
+    if idx is None:
+        _log.warning("Ollama reply has no usable action_index | raw=%r", content)
         return None
     if 0 <= idx < len(legal_actions):
         _log.info(
