@@ -70,7 +70,7 @@ def _fake_http_response(action_index: int) -> unittest.mock.MagicMock:
     resp = unittest.mock.MagicMock()
     resp.status_code = 200
     resp.json.return_value = {
-        "choices": [{"message": {"content": f'{{"action_index": {action_index}}}'}}]
+        "message": {"content": f'{{"action_index": {action_index}}}'}
     }
     return resp
 
@@ -530,15 +530,16 @@ def test_when_ollama_returns_any_valid_index_then_result_is_always_in_range(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Global [T2]: LLM calls /chat/completions with json_schema strict response_format
-# Criterion: LLM opponent calls Ollama via /chat/completions
-#            with json_schema `strict` output
+# Global [T2]: LLM calls the native /api/chat with an enforced `format` schema
+# Criterion: LLM opponent calls Ollama via /api/chat with a JSON-schema `format`
+#            (XGrammar-enforced) rather than the loose /v1 response_format, which
+#            Ollama ignores for reasoning models (ollama#10937, #15260).
 # Black-box: capture httpx.post call args and inspect the outgoing request body.
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def test_when_ollama_client_is_called_then_url_contains_chat_completions():
-    """URL sent to httpx.post must contain '/chat/completions' (not '/completions')."""
+def test_when_ollama_client_is_called_then_url_is_native_api_chat():
+    """URL sent to httpx.post must be the native /api/chat endpoint, not /v1."""
     from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
@@ -550,13 +551,14 @@ def test_when_ollama_client_is_called_then_url_contains_chat_completions():
 
     call_args = mock_post.call_args
     url = call_args.args[0] if call_args.args else call_args.kwargs.get("url", "")
-    assert "chat/completions" in str(url), (
-        f"Expected URL to contain 'chat/completions', got: {url!r}"
+    assert str(url).endswith("/api/chat"), (
+        f"Expected URL to end with '/api/chat', got: {url!r}"
     )
+    assert "/v1/" not in str(url)
 
 
-def test_when_ollama_client_is_called_then_request_body_includes_response_format():
-    """Request body sent to Ollama must include a 'response_format' key."""
+def test_when_ollama_client_is_called_then_request_body_includes_format():
+    """Request body sent to Ollama must include a native 'format' key."""
     from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
@@ -568,13 +570,11 @@ def test_when_ollama_client_is_called_then_request_body_includes_response_format
 
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
-    assert "response_format" in body, (
-        "Ollama request body must include 'response_format' for json_schema strict output"
-    )
+    assert "format" in body, "Ollama request body must include native 'format' schema"
 
 
-def test_when_ollama_client_is_called_then_response_format_type_is_json_schema():
-    """response_format.type must equal 'json_schema' (not 'json_object' or absent)."""
+def test_when_ollama_client_is_called_then_format_type_is_object():
+    """format.type must equal 'object' (a raw JSON schema, not OpenAI nesting)."""
     from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
@@ -586,14 +586,14 @@ def test_when_ollama_client_is_called_then_response_format_type_is_json_schema()
 
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
-    rf = body.get("response_format", {})
-    assert rf.get("type") == "json_schema", (
-        f"response_format.type must be 'json_schema', got: {rf.get('type')!r}"
+    fmt = body.get("format", {})
+    assert fmt.get("type") == "object", (
+        f"format.type must be 'object', got: {fmt.get('type')!r}"
     )
 
 
-def test_when_ollama_client_is_called_then_json_schema_strict_is_true():
-    """response_format.json_schema.strict must be True to enforce exact schema output."""
+def test_when_ollama_client_is_called_then_thinking_is_enabled():
+    """Think must be True: think=false breaks `format` enforcement (ollama#15260)."""
     from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
@@ -603,14 +603,12 @@ def test_when_ollama_client_is_called_then_json_schema_strict_is_true():
     ):
         call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
-    call_args = mock_post.call_args
-    body = call_args.kwargs.get("json") or {}
-    json_schema_def = body.get("response_format", {}).get("json_schema", {})
-    assert json_schema_def.get("strict") is True, "response_format.json_schema.strict must be True"
+    body = mock_post.call_args.kwargs.get("json") or {}
+    assert body.get("think") is True, "thinking must stay enabled for format masking"
 
 
 def test_when_ollama_client_is_called_then_schema_enforces_action_index_field():
-    """json_schema properties must include 'action_index' so the LLM picks an index."""
+    """Format properties must include 'action_index' so the LLM picks an index."""
     from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
@@ -622,11 +620,9 @@ def test_when_ollama_client_is_called_then_schema_enforces_action_index_field():
 
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
-    schema_def = body.get("response_format", {}).get("json_schema", {})
-    schema = schema_def.get("schema", schema_def)
-    properties = schema.get("properties", {})
+    properties = body.get("format", {}).get("properties", {})
     assert "action_index" in properties, (
-        "json_schema must declare 'action_index' as a required property"
+        "format schema must declare 'action_index' as a required property"
     )
 
 
@@ -634,12 +630,12 @@ def test_when_ollama_client_is_called_then_schema_enforces_action_index_field():
 
 
 @given(st.integers(min_value=1, max_value=10))
-def test_when_ollama_is_called_with_any_n_actions_then_response_format_is_json_schema(
+def test_when_ollama_is_called_with_any_n_actions_then_format_type_is_object(
     n_actions: int,
 ) -> None:
-    """response_format.type is always 'json_schema' regardless of legal_actions size.
+    """format.type is always 'object' regardless of legal_actions size.
 
-    Derived from: 'calls Ollama via /chat/completions with json_schema strict output'.
+    Derived from: 'calls Ollama via /api/chat with an enforced JSON-schema format'.
     """
     from src.agents.ollama_client import call_ollama_for_action_index
 
@@ -651,4 +647,4 @@ def test_when_ollama_is_called_with_any_n_actions_then_response_format_is_json_s
         call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     body = mock_post.call_args.kwargs.get("json") or {}
-    assert body.get("response_format", {}).get("type") == "json_schema"
+    assert body.get("format", {}).get("type") == "object"

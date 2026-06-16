@@ -1,9 +1,16 @@
 """Ollama chat-completions client for action selection (local or cloud).
 
 The LLM is asked to pick an INDEX into the ``legal_actions`` list. Output is
-constrained to ``{"action_index": <int>}`` via the OpenAI-compatible
-``response_format`` (json_schema, ``strict: true``) so the reply is tiny and
-guaranteed parseable; the chosen action is always legal by construction.
+constrained to ``{"action_index": <int>}`` via Ollama's NATIVE ``/api/chat``
+``format`` field (a raw JSON schema enforced with XGrammar constrained
+decoding) so the reply is tiny and guaranteed parseable; the chosen action is
+always legal by construction.
+
+Why not the OpenAI-compatible ``/v1/chat/completions`` ``response_format``?
+Ollama only honours that as loose "JSON mode" and silently ignores the
+json_schema for many models (ollama#10937, #10001) — reasoning models such as
+``glm`` then free-reason in prose and never emit the schema. The native
+``format`` field is actually enforced, so we target ``/api/chat`` instead.
 
 One client serves both deployment modes — they differ only in ``base_url``,
 the API key, and the model name:
@@ -14,14 +21,15 @@ the API key, and the model name:
 * **Cloud (Ollama Turbo):** ``OLLAMA_BASE_URL=https://ollama.com/v1`` with
   ``OLLAMA_API_KEY=<key>`` and a hosted model (e.g. ``gpt-oss:120b``).
 
-Endpoint (OpenAI-compatible; the base URL already ends in ``/v1``):
-    {OLLAMA_BASE_URL}/chat/completions
+Endpoint: the base URL ends in ``/v1`` (for the model-list probe); the client
+strips it and calls the native ``{root}/api/chat``. Auth uses the standard
+``Authorization: Bearer <key>`` header.
 
-Auth uses the standard ``Authorization: Bearer <key>`` header.
-
-Note on reasoning models: ``gpt-oss`` reasons before emitting the final JSON,
-which consumes completion tokens. ``max_tokens`` is therefore sized to leave
-room for that hidden reasoning rather than the ~10-token answer alone.
+Note on reasoning models: ``glm`` / ``gpt-oss`` reason before emitting the
+final JSON, which consumes completion tokens, and the ``format`` mask only
+applies after the end-of-thinking token — so thinking is kept ENABLED
+(``think: true``; ollama#15260) and ``num_predict`` (``max_tokens``) is sized
+to leave room for the hidden reasoning, not just the ~10-token answer.
 """
 
 from __future__ import annotations
@@ -46,20 +54,18 @@ ENV_API_KEY = "OLLAMA_API_KEY"
 
 DEFAULT_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_API_KEY = "ollama"  # placeholder; Ollama ignores it for local serving
-DEFAULT_MAX_TOKENS = 8192  # reasoning models (gpt-oss, glm) think before the JSON; leave room
+DEFAULT_MAX_TOKENS = 16384  # reasoning models (gpt-oss, glm) think before the JSON; leave room
 
-_RESPONSE_FORMAT: dict[str, Any] = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "action_choice",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {"action_index": {"type": "integer"}},
-            "required": ["action_index"],
-            "additionalProperties": False,
-        },
-    },
+# Raw JSON schema for Ollama's NATIVE /api/chat `format` field. Unlike the
+# OpenAI-compatible /v1 `response_format` (which Ollama only honours as loose
+# "JSON mode" and silently ignores for many models — ollama#10937, #10001),
+# the native `format` is enforced via XGrammar constrained decoding, so the
+# reply is guaranteed to match this schema.
+_ACTION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"action_index": {"type": "integer"}},
+    "required": ["action_index"],
+    "additionalProperties": False,
 }
 
 
@@ -110,14 +116,25 @@ def call_ollama_for_action_index(
     body: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "response_format": _RESPONSE_FORMAT,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
+        "format": _ACTION_SCHEMA,  # enforced via XGrammar on the native endpoint
+        "stream": False,
+        # Keep thinking ENABLED. For reasoning models (glm, gpt-oss) Ollama
+        # defers the `format` probability mask until the end-of-thinking token;
+        # think=false closes the thinking tags without that token, so the mask
+        # never applies and the schema is ignored (ollama#15260). With thinking
+        # on, the model reasons, then constrained decoding forces the JSON.
+        "think": True,
+        "options": {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        },
     }
     if top_p is not None:
-        body["top_p"] = top_p
+        body["options"]["top_p"] = top_p
 
-    url = f"{base}/chat/completions"
+    # Native /api/chat (NOT the OpenAI-compat /v1) — `base` ends in /v1, strip it.
+    root = base[:-3] if base.endswith("/v1") else base
+    url = f"{root}/api/chat"
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     _log.debug(
         "---PROMPT--- model=%s temp=%.2f n_legal=%d\n%s",
@@ -171,9 +188,11 @@ _INDEX_RE = re.compile(r'"?action_index"?\s*[:=]\s*(-?\d+)')
 def _extract_action_index(content: str) -> int | None:
     """Pull an integer ``action_index`` out of a model reply, tolerantly.
 
-    Not all Ollama models honour ``response_format`` json_schema; reasoning
-    models in particular wrap the answer in a ```json fence or add prose. Try
-    strict JSON first, then a fenced-JSON unwrap, then a regex fallback.
+    Output shape varies by backend: the native ``format`` schema yields
+    ``{"action_index": <int>}`` locally, but cloud-proxied models often flatten
+    the single-property object to a bare integer (e.g. ``"0"``); reasoning
+    models may also wrap the answer in a ```json fence or add prose. Try strict
+    JSON (object *or* bare int) first, then a fenced-JSON unwrap, then regex.
     """
     candidates = [content.strip()]
     fenced = _FENCE_RE.search(content)
@@ -181,9 +200,17 @@ def _extract_action_index(content: str) -> int | None:
         candidates.append(fenced.group(1).strip())
     for candidate in candidates:
         try:
-            return int(json.loads(candidate)["action_index"])
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
             continue
+        # Bare integer (cloud schema-flattening): "0" -> 0. Exclude bool.
+        if isinstance(parsed, int) and not isinstance(parsed, bool):
+            return parsed
+        if isinstance(parsed, dict) and "action_index" in parsed:
+            try:
+                return int(parsed["action_index"])
+            except (ValueError, TypeError):
+                continue
     match = _INDEX_RE.search(content)
     return int(match.group(1)) if match else None
 
@@ -195,26 +222,26 @@ def _parse_index(
     elapsed: float,
 ) -> int | None:
     """Extract and range-check ``action_index`` from a chat-completions reply."""
-    choices = data.get("choices") or []
-    message = choices[0].get("message", {}) if choices else {}
+    # Native /api/chat shape: {"message": {"content", "thinking"}, "eval_count",
+    # "done_reason"} — not the OpenAI-compat {"choices": [...], "usage": ...}.
+    message = data.get("message") or {}
     content = message.get("content", "") or ""
-    finish_reason = choices[0].get("finish_reason") if choices else None
-    usage = data.get("usage", {})
-    completion_tokens = usage.get("completion_tokens", 0)
+    completion_tokens = data.get("eval_count", 0)
+    done_reason = data.get("done_reason")
     if not content:
-        # Reasoning models (glm, gpt-oss) sometimes emit the answer only in a
-        # `reasoning` / `reasoning_content` field, or exhaust max_tokens on the
-        # thinking trace (finish_reason="length") and return empty content.
-        # Try the reasoning text before giving up — the index regex still works.
-        reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
-        if reasoning:
-            content = reasoning
+        # With `format` enforced, content should already be schema-valid JSON.
+        # If it is empty (e.g. num_predict exhausted mid-thinking,
+        # done_reason="length"), fall back to the thinking trace — the index
+        # regex may still recover a number before giving up to RandomAgent.
+        thinking = message.get("thinking") or message.get("reasoning") or ""
+        if thinking:
+            content = thinking
         else:
             _log.warning(
-                "Ollama returned empty content (model=%s, %.2fs, finish_reason=%s, tok=%d)",
+                "Ollama returned empty content (model=%s, %.2fs, done_reason=%s, tok=%d)",
                 model,
                 elapsed,
-                finish_reason,
+                done_reason,
                 completion_tokens,
             )
             return None

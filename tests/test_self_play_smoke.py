@@ -76,7 +76,7 @@ def _fake_ollama_response(index: int = 0) -> MagicMock:
     resp = MagicMock()
     resp.status_code = 200
     resp.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"action_index": index})}}]
+        "message": {"content": json.dumps({"action_index": index})}
     }
     resp.raise_for_status = MagicMock(return_value=None)
     return resp
