@@ -2,13 +2,13 @@
 
 Criteria covered:
   [UNIT] PlayerConfig is a frozen dataclass with player_id, temperature,
-         top_p, strategy_hint, model (default "gpt-4.1")
+         top_p, strategy_hint, model (default "gpt-oss:120b")
   [UNIT] DEFAULT_6P_PROFILES matches the six-profile table exactly
   [UNIT] load_profiles_from_yaml() round-trips config/default_6p.yaml;
          raises ValueError on out-of-range (player_id not in 0–5) or
          duplicate player_id
   [UNIT] config/default_6p.yaml and config/llm_6p.yaml parse cleanly and
-         contain only Azure-relevant keys (no Ollama/BAML residue)
+         contain no BAML residue
 """
 
 from __future__ import annotations
@@ -57,21 +57,21 @@ def _write_profiles_yaml(profiles: list[PlayerConfig], path: str | pathlib.Path)
 class TestPlayerConfigDataclass:
     """Frozen dataclass contract for PlayerConfig."""
 
-    def test_when_model_omitted_then_default_is_gpt_41(self):
-        """Criterion: model field defaults to 'gpt-4.1'."""
+    def test_when_model_omitted_then_default_is_gpt_oss_120b(self):
+        """Criterion: model field defaults to 'gpt-oss:120b'."""
         pc = PlayerConfig(player_id=0, temperature=0.5, top_p=0.9, strategy_hint="hint")
-        assert pc.model == "gpt-4.1"
+        assert pc.model == "gpt-oss:120b"
 
     def test_when_all_fields_supplied_then_fields_are_stored_correctly(self):
         """Criterion: PlayerConfig has player_id, temperature, top_p, strategy_hint, model."""
         pc = PlayerConfig(
-            player_id=3, temperature=0.3, top_p=0.95, strategy_hint="defend", model="gpt-4.1"
+            player_id=3, temperature=0.3, top_p=0.95, strategy_hint="defend", model="gpt-oss:120b"
         )
         assert pc.player_id == 3
         assert pc.temperature == pytest.approx(0.3)
         assert pc.top_p == pytest.approx(0.95)
         assert pc.strategy_hint == "defend"
-        assert pc.model == "gpt-4.1"
+        assert pc.model == "gpt-oss:120b"
 
     def test_when_attribute_mutated_then_frozen_error_is_raised(self):
         """Criterion: PlayerConfig is frozen (immutable after construction)."""
@@ -136,11 +136,11 @@ class TestDefault6PProfiles:
         )
         assert profile.strategy_hint == strategy_hint, f"player {player_id}: strategy_hint mismatch"
 
-    def test_when_all_default_models_checked_then_every_profile_uses_gpt_41(self):
-        """Criterion: default model for all profiles is 'gpt-4.1'."""
+    def test_when_all_default_models_checked_then_every_profile_uses_gpt_oss_120b(self):
+        """Criterion: default model for all profiles is 'gpt-oss:120b'."""
         for profile in DEFAULT_6P_PROFILES:
-            assert profile.model == "gpt-4.1", (
-                f"player {profile.player_id} has model={profile.model!r}, expected 'gpt-4.1'"
+            assert profile.model == "gpt-oss:120b", (
+                f"player {profile.player_id} has model={profile.model!r}, expected 'gpt-oss:120b'"
             )
 
     def test_when_default_profiles_checked_then_no_duplicate_player_ids_exist(self):
@@ -176,7 +176,7 @@ class TestLoadProfilesFromYaml:
                 "temperature": 0.7,
                 "top_p": 0.85,
                 "strategy_hint": "attack early",
-                "model": "gpt-4.1",
+                "model": "gpt-oss:120b",
             }
         ]
         path = tmp_path / "profiles.yaml"
@@ -287,15 +287,13 @@ def test_when_profiles_written_to_yaml_and_loaded_back_then_field_values_are_pre
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# YAML config files: must parse and contain no Ollama / BAML residue
+# YAML config files: must parse and contain no BAML residue
 #
 # Criterion: config/default_6p.yaml and config/llm_6p.yaml parse cleanly
-#            and contain only Azure-relevant keys.
+#            and contain no stray BAML keys.
 # ────────────────────────────────────────────────────────────────────────────
 
-_FORBIDDEN_KEYS: frozenset[str] = frozenset(
-    {"ollama", "baml", "baml_src", "baml_client", "baml_options", "ollama_model"}
-)
+_FORBIDDEN_KEYS: frozenset[str] = frozenset({"baml", "baml_src", "baml_client", "baml_options"})
 
 
 def _collect_all_keys(obj: object) -> set[str]:
@@ -311,8 +309,8 @@ def _collect_all_keys(obj: object) -> set[str]:
     return keys
 
 
-class TestYamlConfigFilesAzureOnly:
-    """YAML config files must parse cleanly and contain only Azure-relevant keys."""
+class TestYamlConfigFilesClean:
+    """YAML config files must parse cleanly and contain no stray BAML keys."""
 
     def test_when_default_6p_yaml_opened_then_it_parses_without_error(self):
         """Criterion: config/default_6p.yaml parses cleanly."""
@@ -321,16 +319,16 @@ class TestYamlConfigFilesAzureOnly:
             data = yaml.safe_load(fh)
         assert data is not None, "default_6p.yaml must not be empty"
 
-    def test_when_default_6p_yaml_keys_inspected_then_no_ollama_or_baml_key_present(self):
-        """Criterion: no Ollama/BAML residue in default_6p.yaml."""
+    def test_when_default_6p_yaml_keys_inspected_then_no_baml_key_present(self):
+        """Criterion: no BAML residue in default_6p.yaml."""
         yaml_path = PROJECT_ROOT / "config" / "default_6p.yaml"
         with open(yaml_path) as fh:
             data = yaml.safe_load(fh)
         found = _collect_all_keys(data) & _FORBIDDEN_KEYS
-        assert not found, f"Forbidden (Ollama/BAML) keys found in default_6p.yaml: {found}"
+        assert not found, f"Forbidden (BAML) keys found in default_6p.yaml: {found}"
 
     def test_when_llm_6p_yaml_exists_then_it_is_at_expected_path(self):
-        """Criterion: config/llm_6p.yaml exists (Azure pool config)."""
+        """Criterion: config/llm_6p.yaml exists (Ollama pool config)."""
         assert (PROJECT_ROOT / "config" / "llm_6p.yaml").exists(), "config/llm_6p.yaml must exist"
 
     def test_when_llm_6p_yaml_opened_then_it_parses_without_error(self):
@@ -341,11 +339,11 @@ class TestYamlConfigFilesAzureOnly:
             data = yaml.safe_load(fh)
         assert data is not None, "llm_6p.yaml must not be empty"
 
-    def test_when_llm_6p_yaml_keys_inspected_then_no_ollama_or_baml_key_present(self):
-        """Criterion: no Ollama/BAML residue in llm_6p.yaml."""
+    def test_when_llm_6p_yaml_keys_inspected_then_no_baml_key_present(self):
+        """Criterion: no BAML residue in llm_6p.yaml."""
         yaml_path = PROJECT_ROOT / "config" / "llm_6p.yaml"
         assert yaml_path.exists(), "config/llm_6p.yaml must exist"
         with open(yaml_path) as fh:
             data = yaml.safe_load(fh)
         found = _collect_all_keys(data) & _FORBIDDEN_KEYS
-        assert not found, f"Forbidden (Ollama/BAML) keys found in llm_6p.yaml: {found}"
+        assert not found, f"Forbidden (BAML) keys found in llm_6p.yaml: {found}"

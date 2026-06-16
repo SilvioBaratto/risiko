@@ -15,13 +15,13 @@ Criteria covered (oracle-verified as UNIT or T2):
   [UNIT] SelfPlayTrainer.train() smoke run writes a .pt checkpoint to a tmp dir and
          load_checkpoint round-trips episode counter, RNG state, and opponent
   [UNIT] With llm_profiles_path set, the trainer builds N-1 LLMOpponents
-         (Azure call mocked, no network)
+         (Ollama call mocked, no network)
   [UNIT] No magic numbers — all knobs pulled from TrainingConfig/RewardConfig
   [UNIT] Results saved as CSV + TensorBoard logs under results/; every run tagged
          with its seed and config file path
 
 Criteria already covered by test_ac60.py / test_ac61.py (omitted here to avoid
-duplication): Azure /chat/completions contract, LLM output is index, render_action_prompt,
+duplication): Ollama /chat/completions contract, LLM output is index, render_action_prompt,
 .env.example credential files, basic checkpoint save/load.
 """
 
@@ -71,7 +71,7 @@ def _skip_action() -> dict:
     return {"action_type": 5, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0}
 
 
-def _fake_azure_response(action_index: int = 0) -> MagicMock:
+def _fake_ollama_response(action_index: int = 0) -> MagicMock:
     resp = MagicMock()
     resp.status_code = 200
     resp.json.return_value = {
@@ -88,7 +88,7 @@ def _write_player_profiles(path: pathlib.Path, n: int) -> None:
             "temperature": round(0.1 + 0.1 * i, 1),
             "top_p": 0.9,
             "strategy_hint": f"Profile {i}: play optimally.",
-            "model": "gpt-4.1",
+            "model": "gpt-oss:120b",
         }
         for i in range(n)
     ]
@@ -511,7 +511,7 @@ class TestCheckpointRoundTripEpisodeRng:
 
 # ===========================================================================
 # [UNIT]  With llm_profiles_path set, the trainer builds N-1 LLMOpponents
-#         (Azure call mocked, no network)
+#         (Ollama call mocked, no network)
 # ===========================================================================
 
 
@@ -529,12 +529,8 @@ class TestSelfPlayTrainerLlmProfiles:
         profiles_yaml = tmp_path / "profiles.yaml"
         _write_player_profiles(profiles_yaml, 3)
 
-        monkeypatch.setenv(
-            "AZURE_OPENAI_BASE_URL",
-            "https://fake.openai.azure.com/openai/deployments/gpt-4.1",
-        )
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
 
         cfg = TrainingConfig(
             seed=0,
@@ -544,7 +540,7 @@ class TestSelfPlayTrainerLlmProfiles:
             ),
         )
 
-        with patch("httpx.post", return_value=_fake_azure_response(0)):
+        with patch("httpx.post", return_value=_fake_ollama_response(0)):
             trainer = SelfPlayTrainer(cfg, checkpoint_dir=tmp_path, max_turns=10)
 
         assert trainer._llm_opponents is not None
@@ -556,19 +552,15 @@ class TestSelfPlayTrainerLlmProfiles:
     def test_when_profiles_path_set_then_no_real_http_call_is_made_on_construction(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Constructing LLMOpponents must not trigger any real Azure HTTP call."""
+        """Constructing LLMOpponents must not trigger any real Ollama HTTP call."""
         from src.config import SelfPlayConfig, TrainingConfig
         from training.self_play import SelfPlayTrainer
 
         profiles_yaml = tmp_path / "profiles3.yaml"
         _write_player_profiles(profiles_yaml, 2)
 
-        monkeypatch.setenv(
-            "AZURE_OPENAI_BASE_URL",
-            "https://fake.openai.azure.com/openai/deployments/gpt-4.1",
-        )
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
 
         cfg = TrainingConfig(
             seed=0,
@@ -582,13 +574,14 @@ class TestSelfPlayTrainerLlmProfiles:
 
         def counting_post(*args: Any, **kwargs: Any) -> MagicMock:
             call_count[0] += 1
-            return _fake_azure_response(0)
+            return _fake_ollama_response(0)
 
         with patch("httpx.post", side_effect=counting_post):
             SelfPlayTrainer(cfg, checkpoint_dir=tmp_path, max_turns=10)
 
         assert call_count[0] == 0, (
-            f"No Azure HTTP calls expected during SelfPlayTrainer construction; got {call_count[0]}"
+            "No Ollama HTTP calls expected during SelfPlayTrainer construction;"
+            f" got {call_count[0]}"
         )
 
 

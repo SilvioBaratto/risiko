@@ -78,10 +78,9 @@ def _fake_http_response(action_index: int) -> unittest.mock.MagicMock:
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _ENV_EXAMPLE = os.path.join(_PROJECT_ROOT, ".env.example")
 
-_FAKE_AZURE_ENV = {
-    "AZURE_OPENAI_BASE_URL": "https://fake.openai.azure.com/openai/deployments/gpt-4.1",
-    "AZURE_OPENAI_API_KEY": "fake-key-00000000000000000000000000000000",
-    "AZURE_OPENAI_API_VERSION": "2024-02-01",
+_FAKE_OLLAMA_ENV = {
+    "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+    "OLLAMA_API_KEY": "fake-key-00000000000000000000000000000000",
 }
 
 
@@ -395,7 +394,7 @@ def test_when_game_result_is_frozen_then_n_turns_mutation_always_raises(
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Global: .env.example committed
-# Criterion: Azure credentials load from .env; .env.example is committed
+# Criterion: Ollama credentials load from .env; .env.example is committed
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -404,22 +403,16 @@ def test_when_project_root_is_checked_then_env_example_file_is_present():
     assert os.path.isfile(_ENV_EXAMPLE), f".env.example not found at {_ENV_EXAMPLE}"
 
 
-def test_when_env_example_is_read_then_azure_base_url_variable_is_declared():
+def test_when_env_example_is_read_then_ollama_base_url_variable_is_declared():
     with open(_ENV_EXAMPLE) as fh:
         content = fh.read()
-    assert "AZURE_OPENAI_BASE_URL" in content
+    assert "OLLAMA_BASE_URL" in content
 
 
-def test_when_env_example_is_read_then_azure_api_key_variable_is_declared():
+def test_when_env_example_is_read_then_ollama_api_key_variable_is_declared():
     with open(_ENV_EXAMPLE) as fh:
         content = fh.read()
-    assert "AZURE_OPENAI_API_KEY" in content
-
-
-def test_when_env_example_is_read_then_azure_api_version_variable_is_declared():
-    with open(_ENV_EXAMPLE) as fh:
-        content = fh.read()
-    assert "AZURE_OPENAI_API_VERSION" in content
+    assert "OLLAMA_API_KEY" in content
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -447,17 +440,17 @@ def test_when_render_action_prompt_is_called_then_legal_actions_are_represented_
     assert "0" in prompt
 
 
-def test_when_render_action_prompt_is_called_then_azure_api_key_literal_is_absent_from_output():
+def test_when_render_action_prompt_is_called_then_ollama_api_key_literal_is_absent_from_output():
     """Criterion: API key never hardcoded — prompt must not contain the key literal."""
     from src.agents.action_prompt import render_action_prompt
 
     prompt = render_action_prompt(_obs(), [_action()])
-    assert "AZURE_OPENAI_API_KEY" not in prompt
+    assert "OLLAMA_API_KEY" not in prompt
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Global: LLM output is index into legal_actions — always legal by construction
-# Criterion: call_azure_for_action_index returns an action from legal_actions
+# Criterion: call_ollama_for_action_index returns an action from legal_actions
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -469,43 +462,43 @@ _LEGAL_SKIP = [
 _SKIP_ACTION = {"action_type": 5, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0}
 
 
-def test_when_azure_returns_action_index_0_then_result_is_zero():
+def test_when_ollama_returns_action_index_0_then_result_is_zero():
     """Criterion: index 0 maps to the first element; function returns the index (int)."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION, _SKIP_ACTION]
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(0)),
     ):
-        result = call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        result = call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
     assert result == 0
 
 
-def test_when_azure_returns_action_index_1_then_result_is_one():
+def test_when_ollama_returns_action_index_1_then_result_is_one():
     """Criterion: index 1 maps to the second element; function returns the index (int)."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION, _SKIP_ACTION]
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(1)),
     ):
-        result = call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        result = call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
     assert result == 1
 
 
-def test_when_azure_returns_last_valid_index_then_result_equals_last_index():
+def test_when_ollama_returns_last_valid_index_then_result_equals_last_index():
     """Criterion: index at the end of legal_actions is returned as-is."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION] * 5
     last_idx = len(legal) - 1
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(last_idx)),
     ):
-        result = call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        result = call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
     assert result == last_idx
 
 
@@ -516,44 +509,44 @@ def test_when_azure_returns_last_valid_index_then_result_equals_last_index():
     st.integers(min_value=1, max_value=10),  # list length
     st.integers(min_value=0, max_value=9),  # raw index
 )
-def test_when_azure_returns_any_valid_index_then_result_is_always_in_range(
+def test_when_ollama_returns_any_valid_index_then_result_is_always_in_range(
     n_actions: int, raw_index: int
 ) -> None:
     """Return value is always a valid index into legal_actions (int, in-range).
 
     Derived from: 'LLM output is an index into legal_actions — always legal.'
     """
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION] * n_actions
     index = raw_index % n_actions
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(index)),
     ):
-        result = call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        result = call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
     assert result is not None
     assert 0 <= result < n_actions
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Global [T2]: LLM calls /chat/completions with json_schema strict response_format
-# Criterion: LLM opponent calls Azure OpenAI GPT-4.1 via /chat/completions
+# Criterion: LLM opponent calls Ollama via /chat/completions
 #            with json_schema `strict` output
 # Black-box: capture httpx.post call args and inspect the outgoing request body.
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def test_when_azure_client_is_called_then_url_contains_chat_completions():
+def test_when_ollama_client_is_called_then_url_contains_chat_completions():
     """URL sent to httpx.post must contain '/chat/completions' (not '/completions')."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(0)) as mock_post,
     ):
-        call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     call_args = mock_post.call_args
     url = call_args.args[0] if call_args.args else call_args.kwargs.get("url", "")
@@ -562,34 +555,34 @@ def test_when_azure_client_is_called_then_url_contains_chat_completions():
     )
 
 
-def test_when_azure_client_is_called_then_request_body_includes_response_format():
-    """Request body sent to Azure must include a 'response_format' key."""
-    from src.agents.azure_openai import call_azure_for_action_index
+def test_when_ollama_client_is_called_then_request_body_includes_response_format():
+    """Request body sent to Ollama must include a 'response_format' key."""
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(0)) as mock_post,
     ):
-        call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
     assert "response_format" in body, (
-        "Azure request body must include 'response_format' for json_schema strict output"
+        "Ollama request body must include 'response_format' for json_schema strict output"
     )
 
 
-def test_when_azure_client_is_called_then_response_format_type_is_json_schema():
+def test_when_ollama_client_is_called_then_response_format_type_is_json_schema():
     """response_format.type must equal 'json_schema' (not 'json_object' or absent)."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(0)) as mock_post,
     ):
-        call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
@@ -599,16 +592,16 @@ def test_when_azure_client_is_called_then_response_format_type_is_json_schema():
     )
 
 
-def test_when_azure_client_is_called_then_json_schema_strict_is_true():
+def test_when_ollama_client_is_called_then_json_schema_strict_is_true():
     """response_format.json_schema.strict must be True to enforce exact schema output."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(0)) as mock_post,
     ):
-        call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
@@ -616,16 +609,16 @@ def test_when_azure_client_is_called_then_json_schema_strict_is_true():
     assert json_schema_def.get("strict") is True, "response_format.json_schema.strict must be True"
 
 
-def test_when_azure_client_is_called_then_schema_enforces_action_index_field():
+def test_when_ollama_client_is_called_then_schema_enforces_action_index_field():
     """json_schema properties must include 'action_index' so the LLM picks an index."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(0)) as mock_post,
     ):
-        call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     call_args = mock_post.call_args
     body = call_args.kwargs.get("json") or {}
@@ -641,21 +634,21 @@ def test_when_azure_client_is_called_then_schema_enforces_action_index_field():
 
 
 @given(st.integers(min_value=1, max_value=10))
-def test_when_azure_is_called_with_any_n_actions_then_response_format_is_json_schema(
+def test_when_ollama_is_called_with_any_n_actions_then_response_format_is_json_schema(
     n_actions: int,
 ) -> None:
     """response_format.type is always 'json_schema' regardless of legal_actions size.
 
-    Derived from: 'calls Azure via /chat/completions with json_schema strict output'.
+    Derived from: 'calls Ollama via /chat/completions with json_schema strict output'.
     """
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION] * n_actions
     with (
-        unittest.mock.patch.dict(os.environ, _FAKE_AZURE_ENV),
+        unittest.mock.patch.dict(os.environ, _FAKE_OLLAMA_ENV),
         unittest.mock.patch("httpx.post", return_value=_fake_http_response(0)) as mock_post,
     ):
-        call_azure_for_action_index(_obs(), legal, model="gpt-4.1")
+        call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     body = mock_post.call_args.kwargs.get("json") or {}
     assert body.get("response_format", {}).get("type") == "json_schema"

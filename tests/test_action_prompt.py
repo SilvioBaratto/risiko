@@ -378,11 +378,11 @@ class TestStatusLine:
 class TestSecretsHygiene:
     """Confirm no credential material appears in the rendered prompt."""
 
-    def test_when_prompt_rendered_then_azure_api_key_var_absent(self, obs):
-        assert "AZURE_OPENAI_API_KEY" not in render_action_prompt(obs, [_skip()])
+    def test_when_prompt_rendered_then_ollama_api_key_var_absent(self, obs):
+        assert "OLLAMA_API_KEY" not in render_action_prompt(obs, [_skip()])
 
-    def test_when_prompt_rendered_then_azure_base_url_var_absent(self, obs):
-        assert "AZURE_OPENAI_BASE_URL" not in render_action_prompt(obs, [_skip()])
+    def test_when_prompt_rendered_then_ollama_base_url_var_absent(self, obs):
+        assert "OLLAMA_BASE_URL" not in render_action_prompt(obs, [_skip()])
 
     def test_when_prompt_rendered_then_no_32_char_hex_key_pattern(self, obs):
         prompt = render_action_prompt(obs, [_skip()])

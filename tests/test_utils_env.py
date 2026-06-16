@@ -5,9 +5,8 @@ All dotenv I/O is mocked; no real .env file is read.
 
 Criteria covered:
 - ensure_env_loaded() is idempotent: calling it N times invokes load_dotenv exactly once
-- When python-dotenv is not installed the function raises ImportError
+- When python-dotenv is not installed the function returns gracefully (no raise)
 - Happy path calls load_dotenv(find_dotenv(usecwd=True))
-- Raises AzureConfigError when AZURE_OPENAI_BASE_URL or AZURE_OPENAI_API_KEY is unresolved
 """
 
 from __future__ import annotations
@@ -51,7 +50,7 @@ def test_when_called_twice_then_load_dotenv_is_invoked_exactly_once():
         patch("dotenv.load_dotenv", mock_load),
         patch.dict(
             "os.environ",
-            {"AZURE_OPENAI_BASE_URL": "https://x", "AZURE_OPENAI_API_KEY": "k"},
+            {"OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "ollama"},
             clear=False,
         ),
     ):
@@ -99,7 +98,7 @@ def test_when_dotenv_present_then_find_dotenv_is_called_with_usecwd_true():
         patch("dotenv.load_dotenv", mock_load),
         patch.dict(
             "os.environ",
-            {"AZURE_OPENAI_BASE_URL": "https://x", "AZURE_OPENAI_API_KEY": "k"},
+            {"OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "ollama"},
             clear=False,
         ),
     ):
@@ -124,7 +123,7 @@ def test_when_dotenv_present_then_load_dotenv_is_called_with_path_from_find_dote
         patch("dotenv.load_dotenv", mock_load),
         patch.dict(
             "os.environ",
-            {"AZURE_OPENAI_BASE_URL": "https://x", "AZURE_OPENAI_API_KEY": "k"},
+            {"OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "ollama"},
             clear=False,
         ),
     ):
@@ -145,7 +144,7 @@ def test_when_dotenv_present_then_load_dotenv_is_called_with_path_from_find_dote
 def test_when_called_n_times_then_load_dotenv_is_always_called_exactly_once(
     n_calls: int,
 ) -> None:
-    """ensure_env_loaded() is idempotent for any number of calls ≥ 1.
+    """ensure_env_loaded() is idempotent for any number of calls >= 1.
 
     Invariant: the dotenv load side-effect occurs exactly once, regardless
     of how many times the caller invokes ensure_env_loaded().
@@ -160,7 +159,7 @@ def test_when_called_n_times_then_load_dotenv_is_always_called_exactly_once(
         patch("dotenv.load_dotenv", mock_load),
         patch.dict(
             "os.environ",
-            {"AZURE_OPENAI_BASE_URL": "https://x", "AZURE_OPENAI_API_KEY": "k"},
+            {"OLLAMA_BASE_URL": "http://localhost:11434/v1", "OLLAMA_API_KEY": "ollama"},
             clear=False,
         ),
     ):

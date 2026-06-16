@@ -29,14 +29,14 @@ class TestPlayerConfigFrozen:
         with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
             cfg.temperature = 0.5  # type: ignore[misc]
 
-    def test_when_model_omitted_defaults_to_gpt_4_1(self) -> None:
+    def test_when_model_omitted_defaults_to_gpt_oss_120b(self) -> None:
         cfg = PlayerConfig(
             player_id=0,
             temperature=0.1,
             top_p=0.9,
             strategy_hint="hint",
         )
-        assert cfg.model == "gpt-4.1"
+        assert cfg.model == "gpt-oss:120b"
         assert cfg.model == DEFAULT_MODEL
 
     def test_when_model_provided_stores_value(self) -> None:
@@ -127,8 +127,8 @@ class TestDefault6PProfiles:
         ids = [p.player_id for p in DEFAULT_6P_PROFILES]
         assert len(set(ids)) == len(ids)
 
-    def test_when_checking_all_models_default_to_gpt_4_1(self) -> None:
-        assert all(p.model == "gpt-4.1" for p in DEFAULT_6P_PROFILES)
+    def test_when_checking_all_models_default_to_gpt_oss_120b(self) -> None:
+        assert all(p.model == "gpt-oss:120b" for p in DEFAULT_6P_PROFILES)
 
 
 class TestLoadProfilesFromYaml:
@@ -156,7 +156,7 @@ class TestLoadProfilesFromYaml:
         assert profiles[0].player_id == 0
         assert profiles[0].temperature == pytest.approx(0.5)
 
-    def test_when_yaml_omits_model_field_defaults_to_gpt_4_1(self, tmp_path: Path) -> None:
+    def test_when_yaml_omits_model_field_defaults_to_gpt_oss_120b(self, tmp_path: Path) -> None:
         data = [
             {
                 "player_id": 0,
@@ -168,7 +168,7 @@ class TestLoadProfilesFromYaml:
         path = tmp_path / "profiles.yaml"
         path.write_text(yaml.dump(data))
         profiles = load_profiles_from_yaml(path)
-        assert profiles[0].model == "gpt-4.1"
+        assert profiles[0].model == "gpt-oss:120b"
 
     def test_when_yaml_has_duplicate_player_ids_raises_value_error(self, tmp_path: Path) -> None:
         data = [

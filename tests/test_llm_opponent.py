@@ -1,4 +1,4 @@
-"""Tests for the LLM opponent with mocked Azure OpenAI client."""
+"""Tests for the LLM opponent with mocked Ollama client."""
 
 from __future__ import annotations
 
@@ -145,25 +145,23 @@ class TestConfiguration:
 
     def test_default_values(self) -> None:
         a = LLMOpponent()
-        assert a._model == "gpt-4.1"
+        assert a._model == "gpt-oss:120b"
         assert a._timeout == 30.0
         assert a._temperature == 0.1
 
     def test_custom_values(self) -> None:
-        a = LLMOpponent(model="gpt-4o", timeout=2.0, temperature=0.5)
-        assert a._model == "gpt-4o"
+        a = LLMOpponent(model="gpt-oss:20b", timeout=2.0, temperature=0.5)
+        assert a._model == "gpt-oss:20b"
         assert a._timeout == 2.0
         assert a._temperature == 0.5
 
-    def test_custom_azure_overrides(self) -> None:
+    def test_custom_ollama_overrides(self) -> None:
         a = LLMOpponent(
-            base_url="https://example.openai.azure.com/openai/deployments/gpt-4.1",
-            api_key="secret",
-            api_version="2024-12-01-preview",
+            base_url="http://localhost:11434/v1",
+            api_key="my-ollama-key",
         )
-        assert a._base_url == "https://example.openai.azure.com/openai/deployments/gpt-4.1"
-        assert a._api_key == "secret"
-        assert a._api_version == "2024-12-01-preview"
+        assert a._base_url == "http://localhost:11434/v1"
+        assert a._api_key == "my-ollama-key"
 
     def test_when_player_config_set_strategy_hint_is_stored(self) -> None:
         from src.agents.player_config import PlayerConfig
@@ -206,33 +204,31 @@ class TestConfiguration:
 
 
 # ------------------------------------------------------------------
-# Azure call wiring
+# Ollama call wiring
 # ------------------------------------------------------------------
 
 
-class TestAzureWiring:
-    """_call_with_timeout forwards config to the Azure client."""
+class TestOllamaWiring:
+    """_call_with_timeout forwards config to the Ollama client."""
 
-    def test_when_act_then_azure_client_receives_overrides(self, dummy_obs, dummy_legal) -> None:
+    def test_when_act_then_ollama_client_receives_overrides(self, dummy_obs, dummy_legal) -> None:
         from src.agents.player_config import PlayerConfig
 
         config = PlayerConfig(player_id=0, temperature=0.7, top_p=0.85, strategy_hint="hint")
         a = LLMOpponent(
             player_config=config,
-            base_url="https://example/deployments/gpt-4.1",
-            api_key="k",
-            api_version="2024-12-01-preview",
+            base_url="http://localhost:11434/v1",
+            api_key="test-key",
         )
         with patch(
-            "src.agents.llm_opponent.call_azure_for_action_index", return_value=0
+            "src.agents.llm_opponent.call_ollama_for_action_index", return_value=0
         ) as mock_call:
             a.act(dummy_obs, dummy_legal)
         mock_call.assert_called_once()
         kwargs = mock_call.call_args.kwargs
-        assert kwargs["model"] == "gpt-4.1"
-        assert kwargs["base_url"] == "https://example/deployments/gpt-4.1"
-        assert kwargs["api_key"] == "k"
-        assert kwargs["api_version"] == "2024-12-01-preview"
+        assert kwargs["model"] == "gpt-oss:120b"
+        assert kwargs["base_url"] == "http://localhost:11434/v1"
+        assert kwargs["api_key"] == "test-key"
         assert kwargs["temperature"] == pytest.approx(0.7)
         assert kwargs["top_p"] == pytest.approx(0.85)
         assert kwargs["strategy_hint"] == "hint"
@@ -247,9 +243,9 @@ class TestPickle:
     """LLMOpponent is pickle-safe (needed for self-play checkpoints)."""
 
     def test_pickle_preserves_model(self) -> None:
-        a = LLMOpponent(model="gpt-4o", timeout=5.0)
+        a = LLMOpponent(model="gpt-oss:20b", timeout=5.0)
         restored = pickle.loads(pickle.dumps(a))
-        assert restored._model == "gpt-4o"
+        assert restored._model == "gpt-oss:20b"
 
     def test_pickle_preserves_temperature(self) -> None:
         a = LLMOpponent(temperature=0.77)

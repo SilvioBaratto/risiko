@@ -1,7 +1,7 @@
 """Example tests for verifiable global acceptance criteria — Issue #49.
 
 Covers:
-  - .env.example is committed with the three required variable names
+  - .env.example is committed with the two required Ollama variable names
   - LLM output is an index into legal_actions (action always legal)
   - render_action_prompt() is the single source of truth for the LLM prompt
 
@@ -49,27 +49,23 @@ def _skip_action() -> dict:
 
 
 # ── .env.example committed with required credentials ─────────────────────────
-# Criterion: Azure credentials load from a git-ignored .env
-#            (AZURE_OPENAI_BASE_URL / _API_KEY / _API_VERSION); .env.example is committed.
+# Criterion: Ollama credentials load from a git-ignored .env
+#            (OLLAMA_BASE_URL / OLLAMA_API_KEY); .env.example is committed.
 
 
 class TestEnvExample:
-    """Criterion: .env.example committed with all three Azure credential variable names."""
+    """Criterion: .env.example committed with both Ollama credential variable names."""
 
     def test_when_env_example_checked_file_exists_at_project_root(self):
         assert (PROJECT_ROOT / ".env.example").is_file()
 
-    def test_when_env_example_read_azure_openai_base_url_variable_is_present(self):
+    def test_when_env_example_read_ollama_base_url_variable_is_present(self):
         content = (PROJECT_ROOT / ".env.example").read_text()
-        assert "AZURE_OPENAI_BASE_URL" in content
+        assert "OLLAMA_BASE_URL" in content
 
-    def test_when_env_example_read_azure_openai_api_key_variable_is_present(self):
+    def test_when_env_example_read_ollama_api_key_variable_is_present(self):
         content = (PROJECT_ROOT / ".env.example").read_text()
-        assert "AZURE_OPENAI_API_KEY" in content
-
-    def test_when_env_example_read_azure_openai_api_version_variable_is_present(self):
-        content = (PROJECT_ROOT / ".env.example").read_text()
-        assert "AZURE_OPENAI_API_VERSION" in content
+        assert "OLLAMA_API_KEY" in content
 
     def test_when_gitignore_present_dotenv_file_is_excluded_from_version_control(self):
         gitignore = PROJECT_ROOT / ".gitignore"
@@ -83,7 +79,7 @@ class TestEnvExample:
 # Criterion: LLM output is an index into legal_actions — the chosen action is
 #            always legal by construction.
 #
-# call_azure_for_action_index(obs, legal_actions, *, model, base_url, api_key, ...)
+# call_ollama_for_action_index(obs, legal_actions, *, model, base_url, api_key, ...)
 #   → int | None   (the index, not the action element)
 
 
@@ -104,37 +100,37 @@ class TestLLMOutputIsIndex:
         obs = _minimal_obs()
         with (
             mock.patch("httpx.post", return_value=fake_resp),
-            mock.patch("src.agents.azure_openai.ensure_env_loaded"),
+            mock.patch("src.agents.ollama_client.ensure_env_loaded"),
         ):
-            from src.agents.azure_openai import call_azure_for_action_index
+            from src.agents.ollama_client import call_ollama_for_action_index
 
-            return call_azure_for_action_index(
+            return call_ollama_for_action_index(
                 obs=obs,
                 legal_actions=legal_actions,
-                model="gpt-4.1",
-                base_url="https://fake.openai.azure.com/",
-                api_key="fake-key",
+                model="gpt-oss:120b",
+                base_url="http://localhost:11434/v1",
+                api_key="ollama",
                 temperature=0.5,
                 top_p=0.9,
             )
 
-    def test_when_azure_returns_index_1_result_is_1(self):
+    def test_when_ollama_returns_index_1_result_is_1(self):
         legal_actions = [_skip_action(), _skip_action(), _skip_action()]
         result = self._call_with_mocked_http(action_index=1, legal_actions=legal_actions)
         assert result == 1
 
-    def test_when_azure_returns_index_0_result_is_0(self):
+    def test_when_ollama_returns_index_0_result_is_0(self):
         legal_actions = [_skip_action(), _skip_action(), _skip_action()]
         result = self._call_with_mocked_http(action_index=0, legal_actions=legal_actions)
         assert result == 0
 
-    def test_when_azure_returns_last_valid_index_result_is_in_range(self):
+    def test_when_ollama_returns_last_valid_index_result_is_in_range(self):
         legal_actions = [_skip_action()] * 4
         result = self._call_with_mocked_http(action_index=3, legal_actions=legal_actions)
         assert result == 3
         assert 0 <= result < len(legal_actions)
 
-    def test_when_azure_returns_out_of_range_index_result_is_none(self):
+    def test_when_ollama_returns_out_of_range_index_result_is_none(self):
         """Out-of-range action_index must be rejected (returns None)."""
         legal_actions = [_skip_action(), _skip_action()]
         result = self._call_with_mocked_http(action_index=99, legal_actions=legal_actions)
