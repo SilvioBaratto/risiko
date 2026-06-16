@@ -2,7 +2,7 @@
 
 **Research question:** What is the best strategy to win at Risiko (Risk)?
 
-This project trains a PPO agent to discover optimal Risiko strategy purely through self-play and games against a locally-running Gemma 4 LLM opponent. All training and inference run fully offline.
+This project trains a PPO agent to discover optimal Risiko strategy purely through self-play and games against an Azure OpenAI GPT-4.1 LLM opponent.
 
 ---
 
@@ -16,31 +16,30 @@ Python 3.12+ required. PyTorch and all dependencies are pinned in `requirements.
 
 ---
 
-## Ollama setup
+## Azure OpenAI setup
 
-The LLM opponent uses a custom Ollama model built from Gemma 4.
+The LLM opponent calls **Azure OpenAI (GPT-4.1)** via the `/chat/completions` endpoint with a `response_format` JSON schema (`strict: true`) that constrains the reply to `{"action_index": <int>}` — an index into the legal-action list, so the chosen move is legal by construction and the response is ~10 tokens.
+
+Credentials live in a git-ignored `.env` at the project root. Copy the template and fill it in:
 
 ```bash
-# Pull the base model
-ollama pull gemma4:latest
-
-# Build the risiko model with the project Modelfile
-ollama create risiko -f Modelfile
+cp .env.example .env
+# then edit .env with your Azure resource values
 ```
 
-The `Modelfile` sets a short JSON-only system prompt, 8192-token context, and `num_predict 256` tuned for the small action-index response. The LLM is called via Ollama's native `/api/chat` endpoint with `think: false` and a JSON-schema enforced output.
+`src/utils/env.py:ensure_env_loaded()` loads it once per process (called by the CLI; lazily by the client). Auth uses the `api-key` header.
 
 ---
 
 ## Required environment variables
 
-| Variable | Value | Purpose |
+| Variable | Example | Purpose |
 |---|---|---|
-| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Override Ollama endpoint (optional). The native client strips `/v1` automatically. |
+| `AZURE_OPENAI_BASE_URL` | `https://<resource>.api.cognitive.microsoft.com/openai/deployments/gpt-4.1` | Resource + deployment URL; the client appends `/chat/completions?api-version=...` |
+| `AZURE_OPENAI_API_VERSION` | `2024-12-01-preview` | API version query parameter |
+| `AZURE_OPENAI_API_KEY` | `your-azure-openai-api-key` | Sent as the `api-key` request header |
 
-### Model eviction
-
-`LLMOpponent` accepts `evict_after_call: bool = False`. When `True`, it sends `keep_alive=0` to Ollama after each call, freeing GPU RAM at the cost of a ~10 s cold-start on the next call. **Default is off** because training fires hundreds of LLM calls per episode and reloading the model each time is impractical. Enable eviction only for one-off CLI runs (`evaluate`, `watch`) where freeing memory matters more than per-call latency.
+`LLMOpponent` enforces a hard 30 s timeout per move via a `ThreadPoolExecutor` and falls back to a `RandomAgent` on any timeout, HTTP error, parse error, or out-of-range index — the returned action is always legal.
 
 ---
 
@@ -148,23 +147,23 @@ Win rates at 6 players (random baseline ≈ 1/6 ≈ 16.7%):
 | Agent | Win rate | Notes |
 |---|---|---|
 | Random | ≈ 16% | Uniform action sampling |
-| LLM (`risiko` model) | ≈ 25–35% | Zero-shot tactical reasoning |
+| LLM (GPT-4.1) | ≈ 25–35% | Zero-shot tactical reasoning |
 | PPO (target) | > 35% | Self-play + LLM curriculum |
 
 ---
 
 ## Six-player LLM profiles
 
-Defined in `config/default_6p.yaml`. Each slot uses the shared `risiko` Ollama model with different sampling parameters and a strategy hint injected into the prompt.
+Defined in `config/default_6p.yaml`. Each slot uses GPT-4.1 with a distinct `temperature`/`top_p` and a strategy hint injected into the prompt.
 
-| Player | Temp | Top-p | Top-k | Repeat penalty | Strategy hint |
-|---|---|---|---|---|---|
-| 0 | 0.1 | 0.90 | 40 | 1.10 | Play greedily: maximise territory gain each turn. |
-| 1 | 0.4 | 0.90 | 40 | 1.10 | Focus on securing full continents before expanding. |
-| 2 | 0.7 | 0.85 | 50 | 1.15 | Eliminate the weakest player early; control cards. |
-| 3 | 0.3 | 0.95 | 30 | 1.20 | Fortify borders and expand only when safe. |
-| 4 | 0.9 | 0.80 | 60 | 1.05 | Play unpredictably; avoid predictable attack patterns. |
-| 5 | 0.5 | 0.90 | 40 | 1.10 | Balance attack and defence; trade cards conservatively. |
+| Player | Temp | Top-p | Strategy hint |
+|---|---|---|---|
+| 0 | 0.1 | 0.90 | Play greedily: maximise territory gain each turn. |
+| 1 | 0.4 | 0.90 | Focus on securing full continents before expanding. |
+| 2 | 0.7 | 0.85 | Eliminate the weakest player early; control cards. |
+| 3 | 0.3 | 0.95 | Fortify borders and expand only when safe. |
+| 4 | 0.9 | 0.80 | Play unpredictably; avoid predictable attack patterns. |
+| 5 | 0.5 | 0.90 | Balance attack and defence; trade cards conservatively. |
 
 ---
 

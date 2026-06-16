@@ -1,28 +1,16 @@
-"""Native Ollama HTTP client for action selection.
+"""Provider-agnostic prompt rendering for LLM action selection.
 
-The LLM is asked to pick an INDEX into the legal_actions list rather than
-invent an action. Output is a single integer enforced by Ollama's ``format``
-JSON-schema parameter — small, fast, and guaranteed parseable. The chosen
-action is always legal by construction.
-
-Uses ``/api/chat`` with ``think: false`` to disable Qwen3 / Gemma 4 reasoning
-mode, which would otherwise consume the token budget on hidden thinking.
+The LLM is asked to pick an INDEX into the ``legal_actions`` list rather than
+invent an action. Output is therefore guaranteed legal by construction and tiny
+(~10 tokens). This module owns only the *rendering* of the board/legal-action
+prompt; the HTTP transport lives in the per-provider client modules.
 """
 
 from __future__ import annotations
 
-import json
-import os
-import time
-from typing import Any
-
-import httpx
 import numpy as np
 
 from src.utils.constants import CONTINENT_BONUSES, CONTINENTS, TERRITORY_NAMES
-from src.utils.log import get_logger
-
-_log = get_logger("llm")
 
 _PHASE_NAMES = {
     0: "TRADE",
@@ -51,106 +39,13 @@ _ACTION_NAMES = {
 
 _SYMBOLS = {0: "infantry", 1: "cavalry", 2: "artillery", 3: "wild"}
 
+__all__ = ["render_action_prompt"]
 
-def call_ollama_for_action_index(
+
+def render_action_prompt(
     obs: dict[str, np.ndarray],
     legal_actions: list[dict[str, int]],
-    *,
-    model: str,
-    base_url: str | None = None,
-    timeout: float = 30.0,
-    temperature: float = 0.1,
-    top_p: float | None = None,
-    top_k: int | None = None,
-    repeat_penalty: float | None = None,
     strategy_hint: str | None = None,
-) -> int | None:
-    """Call Ollama and return an index into *legal_actions*, or None on failure."""
-    if not legal_actions:
-        return None
-    url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-    url = url.removesuffix("/v1")
-    prompt = _render_prompt(obs, legal_actions, strategy_hint)
-    options: dict[str, Any] = {"temperature": temperature, "num_predict": 64}
-    if top_p is not None:
-        options["top_p"] = top_p
-    if top_k is not None:
-        options["top_k"] = top_k
-    if repeat_penalty is not None:
-        options["repeat_penalty"] = repeat_penalty
-    body = {
-        "model": model,
-        "think": False,
-        "stream": False,
-        "messages": [{"role": "user", "content": prompt}],
-        "format": {
-            "type": "object",
-            "properties": {
-                "action_index": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": len(legal_actions) - 1,
-                },
-            },
-            "required": ["action_index"],
-        },
-        "options": options,
-    }
-    _log.debug(
-        "---PROMPT--- model=%s temp=%.2f n_legal=%d\n%s",
-        model,
-        temperature,
-        len(legal_actions),
-        prompt,
-    )
-    t0 = time.time()
-    response = httpx.post(f"{url}/api/chat", json=body, timeout=timeout)
-    response.raise_for_status()
-    elapsed = time.time() - t0
-    data = response.json()
-    content = data.get("message", {}).get("content", "")
-    eval_count = data.get("eval_count", 0)
-    eval_duration_ms = data.get("eval_duration", 0) / 1_000_000
-    if not content:
-        _log.warning(
-            "LLM returned empty content (model=%s, %.2fs, eval_duration=%.0fms) — "
-            "thinking may still be enabled or model failed",
-            model,
-            elapsed,
-            eval_duration_ms,
-        )
-        return None
-    try:
-        parsed = json.loads(content)
-        idx = int(parsed["action_index"])
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
-        _log.warning("LLM reply not parseable as {action_index: int}: %s | raw=%r", e, content)
-        return None
-    if 0 <= idx < len(legal_actions):
-        chosen = legal_actions[idx]
-        _log.info(
-            "LLM model=%s reply=%s → idx=%d action=%s (%.2fs, %d tok)",
-            model,
-            content,
-            idx,
-            chosen,
-            elapsed,
-            eval_count,
-        )
-        return idx
-    _log.warning(
-        "LLM returned out-of-range idx=%d (reply=%s, legal range 0..%d) — falling back",
-        idx,
-        content,
-        len(legal_actions) - 1,
-    )
-    return None
-
-
-def _render_prompt(
-    obs: dict[str, np.ndarray],
-    legal_actions: list[dict[str, int]],
-    strategy_hint: str | None,
 ) -> str:
     """Render a structured, LLM-friendly prompt.
 
@@ -247,8 +142,8 @@ def _describe_action(a: dict[str, int], obs: dict[str, np.ndarray]) -> str:
             f"→ {TERRITORY_NAMES[pb]} (P{int(owner[pb])}, a{int(armies[pb])}), "
             f"{pc} {'die' if pc == 1 else 'dice'}"
         )
-    if atype == 3:  # CAPTURE_MOVE
-        return f"move {pc} armies from {TERRITORY_NAMES[pa]} into {TERRITORY_NAMES[pb]}"
+    if atype == 3:  # CAPTURE_MOVE  (param_a = army count; territories live in state)
+        return f"move {pa} armies into just-captured territory"
     if atype == 4:  # FORTIFY
         return f"move {pc} armies from {TERRITORY_NAMES[pa]} to {TERRITORY_NAMES[pb]}"
     if atype == 5:  # SKIP

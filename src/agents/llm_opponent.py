@@ -1,8 +1,7 @@
-"""LLM-based opponent using Ollama's native /api/chat with timeout and fallback."""
+"""LLM-based opponent backed by Azure OpenAI, with timeout and random fallback."""
 
 from __future__ import annotations
 
-import os
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
@@ -11,47 +10,55 @@ import httpx
 import numpy as np
 import torch
 
+from src.agents.azure_openai import call_azure_for_action_index
 from src.agents.base import Agent
-from src.agents.ollama_eviction import OLLAMA_LOCK, evict
-from src.agents.ollama_native import call_ollama_for_action_index
 from src.agents.player_config import PlayerConfig
 from src.agents.random_agent import RandomAgent
 from src.utils.log import get_logger
 
 logger = get_logger("llm_opponent")
 
+DEFAULT_MODEL = "gpt-4.1"
+
 
 class LLMOpponent(Agent):
-    """Agent that queries a local LLM via Ollama with timeout and fallback."""
+    """Agent that queries Azure OpenAI for an action, with timeout and fallback."""
 
     def __init__(
         self,
-        model: str = "risiko",
+        model: str = DEFAULT_MODEL,
         timeout: float = 30.0,
         temperature: float = 0.1,
-        ollama_url: str | None = None,
+        *,
+        top_p: float = 0.9,
+        strategy_hint: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        api_version: str | None = None,
         player_config: PlayerConfig | None = None,
-        evict_after_call: bool = False,
     ) -> None:
-        """Create an LLM opponent with configurable model and timeout.
+        """Create an LLM opponent backed by Azure OpenAI.
 
         Args:
-            model: Ollama model name (overridden by ``player_config.model``).
+            model: Deployment/model name (overridden by ``player_config.model``).
             timeout: Hard timeout per LLM call in seconds.
             temperature: Sampling temperature (overridden by ``player_config``).
-            ollama_url: Optional override for ``OLLAMA_BASE_URL``.
+            top_p: Nucleus sampling parameter (overridden by ``player_config``).
+            strategy_hint: Prompt directive (overridden by ``player_config``).
+            base_url: Optional override for ``AZURE_OPENAI_BASE_URL``.
+            api_key: Optional override for ``AZURE_OPENAI_API_KEY``.
+            api_version: Optional override for ``AZURE_OPENAI_API_VERSION``.
             player_config: Per-player sampling profile; takes precedence over scalars.
-            evict_after_call: If True, send keep_alive=0 after each call (frees
-                GPU memory but causes ~10s cold-start on the next call). Default
-                False for training, where keeping the model warm is critical.
         """
         self._player_config = player_config
         self._model = player_config.model if player_config else model
         self._timeout = timeout
         self._temperature = player_config.temperature if player_config else temperature
-        self._ollama_url = ollama_url
-        self._strategy_hint = player_config.strategy_hint if player_config else None
-        self._evict_after_call = evict_after_call
+        self._top_p = player_config.top_p if player_config else top_p
+        self._strategy_hint = player_config.strategy_hint if player_config else strategy_hint
+        self._base_url = base_url
+        self._api_key = api_key
+        self._api_version = api_version
         self._fallback = RandomAgent()
 
     def act(
@@ -103,37 +110,28 @@ class LLMOpponent(Agent):
         except Exception as e:
             logger.warning("LLM call failed (%s: %s); falling back", type(e).__name__, e)
             return None, "parse_error"
-        finally:
-            if self._evict_after_call:
-                evict(self._model, self._base_url_for_eviction())
 
     def _call_with_timeout(
         self,
         obs: dict[str, np.ndarray],
         legal_actions: list[dict[str, int]],
     ) -> int | None:
-        """Call Ollama with a hard timeout via ThreadPoolExecutor."""
-        pc = self._player_config
-        with OLLAMA_LOCK, ThreadPoolExecutor(max_workers=1) as executor:
+        """Call Azure OpenAI with a hard timeout via ThreadPoolExecutor."""
+        with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
-                call_ollama_for_action_index,
+                call_azure_for_action_index,
                 obs,
                 legal_actions,
                 model=self._model,
-                base_url=self._ollama_url,
+                base_url=self._base_url,
+                api_key=self._api_key,
+                api_version=self._api_version,
                 timeout=self._timeout,
                 temperature=self._temperature,
-                top_p=pc.top_p if pc else None,
-                top_k=pc.top_k if pc else None,
-                repeat_penalty=pc.repeat_penalty if pc else None,
+                top_p=self._top_p,
                 strategy_hint=self._strategy_hint,
             )
             return future.result(timeout=self._timeout)
-
-    def _base_url_for_eviction(self) -> str:
-        """Return the native Ollama base URL (strip /v1 if present)."""
-        url = self._ollama_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        return url.removesuffix("/v1")
 
     def __getstate__(self) -> dict[str, Any]:
         """Return picklable state."""
@@ -147,3 +145,6 @@ class LLMOpponent(Agent):
     def _validate(legal_actions: list[dict[str, int]]) -> None:
         if not legal_actions:
             raise ValueError("legal_actions must not be empty")
+
+
+__all__ = ["LLMOpponent", "DEFAULT_MODEL"]

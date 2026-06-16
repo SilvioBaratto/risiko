@@ -125,8 +125,8 @@ if [ "$SKIP_PHASE2" -eq 0 ]; then
   echo "  Expected wall time: ~days (15-30 min/episode)"
   echo "============================================================"
   echo
-  echo "Tip: warm Ollama before launching to avoid the first-call timeout:"
-  echo "  ollama run risiko 'test' >/dev/null"
+  echo "Tip: ensure .env has valid AZURE_OPENAI_* credentials before launching;"
+  echo "  on any timeout/HTTP error the opponent falls back to a random move."
   echo
 
   RISIKO_CONSOLE_LEVEL=WARNING RISIKO_LOG_LEVEL=DEBUG \

@@ -10,6 +10,7 @@ import yaml
 
 from src.agents.player_config import (
     DEFAULT_6P_PROFILES,
+    DEFAULT_MODEL,
     PlayerConfig,
     load_profiles_from_yaml,
 )
@@ -23,35 +24,30 @@ class TestPlayerConfigFrozen:
             player_id=0,
             temperature=0.1,
             top_p=0.9,
-            top_k=40,
-            repeat_penalty=1.1,
             strategy_hint="hint",
         )
         with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
             cfg.temperature = 0.5  # type: ignore[misc]
 
-    def test_when_model_omitted_defaults_to_risiko(self) -> None:
+    def test_when_model_omitted_defaults_to_gpt_4_1(self) -> None:
         cfg = PlayerConfig(
             player_id=0,
             temperature=0.1,
             top_p=0.9,
-            top_k=40,
-            repeat_penalty=1.1,
             strategy_hint="hint",
         )
-        assert cfg.model == "risiko"
+        assert cfg.model == "gpt-4.1"
+        assert cfg.model == DEFAULT_MODEL
 
     def test_when_model_provided_stores_value(self) -> None:
         cfg = PlayerConfig(
             player_id=0,
             temperature=0.1,
             top_p=0.9,
-            top_k=40,
-            repeat_penalty=1.1,
             strategy_hint="hint",
-            model="qwen3.5:4b",
+            model="gpt-4o",
         )
-        assert cfg.model == "qwen3.5:4b"
+        assert cfg.model == "gpt-4o"
 
 
 class TestDefault6PProfiles:
@@ -70,14 +66,8 @@ class TestDefault6PProfiles:
     def test_when_checking_player_0_temperature_is_0_1(self) -> None:
         assert DEFAULT_6P_PROFILES[0].temperature == pytest.approx(0.1)
 
-    def test_when_checking_player_0_repeat_penalty_is_1_1(self) -> None:
-        assert DEFAULT_6P_PROFILES[0].repeat_penalty == pytest.approx(1.1)
-
     def test_when_checking_player_0_top_p_is_0_9(self) -> None:
         assert DEFAULT_6P_PROFILES[0].top_p == pytest.approx(0.9)
-
-    def test_when_checking_player_0_top_k_is_40(self) -> None:
-        assert DEFAULT_6P_PROFILES[0].top_k == 40
 
     def test_when_checking_player_0_strategy_hint(self) -> None:
         assert DEFAULT_6P_PROFILES[0].strategy_hint == (
@@ -95,14 +85,8 @@ class TestDefault6PProfiles:
     def test_when_checking_player_2_temperature_is_0_7(self) -> None:
         assert DEFAULT_6P_PROFILES[2].temperature == pytest.approx(0.7)
 
-    def test_when_checking_player_2_repeat_penalty_is_1_15(self) -> None:
-        assert DEFAULT_6P_PROFILES[2].repeat_penalty == pytest.approx(1.15)
-
     def test_when_checking_player_2_top_p_is_0_85(self) -> None:
         assert DEFAULT_6P_PROFILES[2].top_p == pytest.approx(0.85)
-
-    def test_when_checking_player_2_top_k_is_50(self) -> None:
-        assert DEFAULT_6P_PROFILES[2].top_k == 50
 
     def test_when_checking_player_2_strategy_hint(self) -> None:
         assert DEFAULT_6P_PROFILES[2].strategy_hint == (
@@ -112,14 +96,8 @@ class TestDefault6PProfiles:
     def test_when_checking_player_3_temperature_is_0_3(self) -> None:
         assert DEFAULT_6P_PROFILES[3].temperature == pytest.approx(0.3)
 
-    def test_when_checking_player_3_repeat_penalty_is_1_2(self) -> None:
-        assert DEFAULT_6P_PROFILES[3].repeat_penalty == pytest.approx(1.2)
-
     def test_when_checking_player_3_top_p_is_0_95(self) -> None:
         assert DEFAULT_6P_PROFILES[3].top_p == pytest.approx(0.95)
-
-    def test_when_checking_player_3_top_k_is_30(self) -> None:
-        assert DEFAULT_6P_PROFILES[3].top_k == 30
 
     def test_when_checking_player_3_strategy_hint(self) -> None:
         assert DEFAULT_6P_PROFILES[3].strategy_hint == (
@@ -129,14 +107,8 @@ class TestDefault6PProfiles:
     def test_when_checking_player_4_temperature_is_0_9(self) -> None:
         assert DEFAULT_6P_PROFILES[4].temperature == pytest.approx(0.9)
 
-    def test_when_checking_player_4_repeat_penalty_is_1_05(self) -> None:
-        assert DEFAULT_6P_PROFILES[4].repeat_penalty == pytest.approx(1.05)
-
     def test_when_checking_player_4_top_p_is_0_8(self) -> None:
         assert DEFAULT_6P_PROFILES[4].top_p == pytest.approx(0.8)
-
-    def test_when_checking_player_4_top_k_is_60(self) -> None:
-        assert DEFAULT_6P_PROFILES[4].top_k == 60
 
     def test_when_checking_player_4_strategy_hint(self) -> None:
         assert DEFAULT_6P_PROFILES[4].strategy_hint == (
@@ -155,14 +127,14 @@ class TestDefault6PProfiles:
         ids = [p.player_id for p in DEFAULT_6P_PROFILES]
         assert len(set(ids)) == len(ids)
 
-    def test_when_checking_all_models_default_to_risiko(self) -> None:
-        assert all(p.model == "risiko" for p in DEFAULT_6P_PROFILES)
+    def test_when_checking_all_models_default_to_gpt_4_1(self) -> None:
+        assert all(p.model == "gpt-4.1" for p in DEFAULT_6P_PROFILES)
 
 
 class TestLoadProfilesFromYaml:
     """YAML loader validation and error handling."""
 
-    def test_when_loading_default_yaml_round_trips_to_six_profiles(self, tmp_path: Path) -> None:
+    def test_when_loading_default_yaml_round_trips_to_six_profiles(self) -> None:
         yaml_path = Path("/Volumes/External SSD/risiko/config/default_6p.yaml")
         profiles = load_profiles_from_yaml(yaml_path)
         assert profiles == list(DEFAULT_6P_PROFILES)
@@ -173,8 +145,6 @@ class TestLoadProfilesFromYaml:
                 "player_id": 0,
                 "temperature": 0.5,
                 "top_p": 0.9,
-                "top_k": 40,
-                "repeat_penalty": 1.1,
                 "strategy_hint": "test hint",
             }
         ]
@@ -186,40 +156,24 @@ class TestLoadProfilesFromYaml:
         assert profiles[0].player_id == 0
         assert profiles[0].temperature == pytest.approx(0.5)
 
-    def test_when_yaml_omits_model_field_defaults_to_risiko(self, tmp_path: Path) -> None:
+    def test_when_yaml_omits_model_field_defaults_to_gpt_4_1(self, tmp_path: Path) -> None:
         data = [
             {
                 "player_id": 0,
                 "temperature": 0.1,
                 "top_p": 0.9,
-                "top_k": 40,
-                "repeat_penalty": 1.1,
                 "strategy_hint": "hint",
             }
         ]
         path = tmp_path / "profiles.yaml"
         path.write_text(yaml.dump(data))
         profiles = load_profiles_from_yaml(path)
-        assert profiles[0].model == "risiko"
+        assert profiles[0].model == "gpt-4.1"
 
     def test_when_yaml_has_duplicate_player_ids_raises_value_error(self, tmp_path: Path) -> None:
         data = [
-            {
-                "player_id": 0,
-                "temperature": 0.1,
-                "top_p": 0.9,
-                "top_k": 40,
-                "repeat_penalty": 1.1,
-                "strategy_hint": "hint",
-            },
-            {
-                "player_id": 0,
-                "temperature": 0.4,
-                "top_p": 0.9,
-                "top_k": 40,
-                "repeat_penalty": 1.1,
-                "strategy_hint": "hint 2",
-            },
+            {"player_id": 0, "temperature": 0.1, "top_p": 0.9, "strategy_hint": "hint"},
+            {"player_id": 0, "temperature": 0.4, "top_p": 0.9, "strategy_hint": "hint 2"},
         ]
         path = tmp_path / "profiles.yaml"
         path.write_text(yaml.dump(data))
@@ -227,32 +181,14 @@ class TestLoadProfilesFromYaml:
             load_profiles_from_yaml(path)
 
     def test_when_yaml_has_player_id_above_5_raises_value_error(self, tmp_path: Path) -> None:
-        data = [
-            {
-                "player_id": 6,
-                "temperature": 0.1,
-                "top_p": 0.9,
-                "top_k": 40,
-                "repeat_penalty": 1.1,
-                "strategy_hint": "hint",
-            }
-        ]
+        data = [{"player_id": 6, "temperature": 0.1, "top_p": 0.9, "strategy_hint": "hint"}]
         path = tmp_path / "profiles.yaml"
         path.write_text(yaml.dump(data))
         with pytest.raises(ValueError, match="out.of.range"):
             load_profiles_from_yaml(path)
 
     def test_when_yaml_has_negative_player_id_raises_value_error(self, tmp_path: Path) -> None:
-        data = [
-            {
-                "player_id": -1,
-                "temperature": 0.1,
-                "top_p": 0.9,
-                "top_k": 40,
-                "repeat_penalty": 1.1,
-                "strategy_hint": "hint",
-            }
-        ]
+        data = [{"player_id": -1, "temperature": 0.1, "top_p": 0.9, "strategy_hint": "hint"}]
         path = tmp_path / "profiles.yaml"
         path.write_text(yaml.dump(data))
         with pytest.raises(ValueError, match="out.of.range"):

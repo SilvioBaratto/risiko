@@ -1,47 +1,35 @@
 - player_id: 0
   temperature: 0.1
   top_p: 0.9
-  top_k: 40
-  repeat_penalty: 1.1
   strategy_hint: "Play greedily: maximise territory gain each turn."
-  model: risiko
+  model: gpt-4.1
 
 - player_id: 1
   temperature: 0.4
   top_p: 0.9
-  top_k: 40
-  repeat_penalty: 1.1
   strategy_hint: "Focus on securing full continents before expanding."
-  model: risiko
+  model: gpt-4.1
 
 - player_id: 2
   temperature: 0.7
   top_p: 0.85
-  top_k: 50
-  repeat_penalty: 1.15
   strategy_hint: "Eliminate the weakest player early; control cards."
-  model: risiko
+  model: gpt-4.1
 
 - player_id: 3
   temperature: 0.3
   top_p: 0.95
-  top_k: 30
-  repeat_penalty: 1.2
   strategy_hint: "Fortify borders and expand only when safe."
-  model: risiko
+  model: gpt-4.1
 
 - player_id: 4
   temperature: 0.9
   top_p: 0.8
-  top_k: 60
-  repeat_penalty: 1.05
   strategy_hint: "Play unpredictably; avoid predictable attack patterns."
-  model: risiko
+  model: gpt-4.1
 
 - player_id: 5
   temperature: 0.5
   top_p: 0.9
-  top_k: 40
-  repeat_penalty: 1.1
   strategy_hint: "Balance attack and defence; trade cards conservatively."
-  model: risiko
+  model: gpt-4.1

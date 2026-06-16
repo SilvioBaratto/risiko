@@ -34,6 +34,32 @@ _LEARNER_ID: int = 0
 _OPPONENT_ID: int = 1
 
 
+def _build_llm_opponents(
+    n_players: int,
+    llm_profiles_path: str | None,
+) -> list[LLMOpponent | None]:
+    """Build N-1 opponent slots from a profile YAML or return None fillers.
+
+    Args:
+        n_players: Total number of players (learner + opponents).
+        llm_profiles_path: Path to a YAML profile list, or ``None`` for
+            self-play / random-filler mode.
+
+    Returns:
+        A list of ``n_players - 1`` items: ``LLMOpponent`` instances when
+        *llm_profiles_path* is set, ``None`` values otherwise.
+    """
+    n_opponents = n_players - 1
+    if not llm_profiles_path:
+        return [None] * n_opponents
+    profiles = load_profiles_from_yaml(Path(llm_profiles_path))
+    opponents: list[LLMOpponent | None] = [
+        LLMOpponent(player_config=profiles[i % len(profiles)]) for i in range(n_opponents)
+    ]
+    _log.info("LLM mode: loaded %d opponents from %s", n_opponents, llm_profiles_path)
+    return opponents
+
+
 class SelfPlayTrainer:
     """Train a PPO agent via self-play with periodic opponent promotion."""
 
@@ -63,7 +89,7 @@ class SelfPlayTrainer:
         self._trainer, self._agent = self._build_trainer()
         self._opponent_net = self._build_opponent_net()
         self._opponent_agent = self._build_opponent_agent()
-        self._llm_opponents: list[LLMOpponent] | None = self._build_llm_opponents()
+        self._llm_opponents: list[LLMOpponent] | None = self._init_llm_opponents()
         self._logger = TensorBoardLogger(self._log_dir)
         self._episode = 0
         self._best_metric_value = 0.0
@@ -200,24 +226,15 @@ class SelfPlayTrainer:
     def _set_rollout_seed(self) -> None:
         set_global_seeds(self._cfg.seed + self._episode)
 
-    def _build_llm_opponents(self) -> list[LLMOpponent] | None:
+    def _init_llm_opponents(self) -> list[LLMOpponent] | None:
         """Load LLM opponents from profiles file, or return None for self-play mode."""
-        profiles_path = self._cfg.self_play.llm_profiles_path
-        if not profiles_path:
-            return None
-        profiles = load_profiles_from_yaml(Path(profiles_path))
-        opponents: list[LLMOpponent] = []
-        for slot in range(1, self._cfg.self_play.n_players):
-            profile = next((p for p in profiles if p.player_id == slot), None)
-            if profile is None:
-                profile = profiles[(slot - 1) % len(profiles)]
-            opponents.append(LLMOpponent(player_config=profile))
-        _log.info(
-            "LLM mode: loaded %d opponents from %s",
-            len(opponents),
-            profiles_path,
+        slots = _build_llm_opponents(
+            self._cfg.self_play.n_players,
+            self._cfg.self_play.llm_profiles_path,
         )
-        return opponents
+        if not self._cfg.self_play.llm_profiles_path:
+            return None
+        return slots  # type: ignore[return-value]
 
     def _build_agents(self) -> list[Agent]:
         """Return the ordered agent list for one episode.
@@ -327,6 +344,8 @@ class SelfPlayTrainer:
     def _maybe_evaluate_and_promote(self) -> None:
         if self._llm_opponents is not None:
             return  # LLM opponents are fixed; no promotion needed
+        if self._episode == 0:
+            return  # nothing trained yet — skip the pre-training evaluation
         if self._episode % self._cfg.self_play.opponent_update_freq != 0:
             return
         win_rate = self._evaluate_against_opponent()
@@ -351,7 +370,7 @@ class SelfPlayTrainer:
             n_games=self._cfg.self_play.eval_games,
             n_players=2,
             seed=self._cfg.seed + self._episode,
-            max_turns=10_000,
+            max_turns=self._max_turns,
         )
         return result.win_rate_a
 

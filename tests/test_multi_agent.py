@@ -1,6 +1,9 @@
-"""Tests for multi-agent runner and GameResult dataclass."""
+"""Tests for multi-agent runner, Transition, and GameResult dataclasses."""
 
 from __future__ import annotations
+
+import dataclasses
+import math
 
 import numpy as np
 import pytest
@@ -9,7 +12,168 @@ import torch
 from src.agents.base import Agent
 from src.agents.random_agent import RandomAgent
 from src.env import RisikoEnv
-from src.multi_agent import GameResult, MultiAgentRunner
+from src.multi_agent import GameResult, MultiAgentRunner, Transition
+
+# ------------------------------------------------------------------
+# Transition
+# ------------------------------------------------------------------
+
+
+class TestTransitionFields:
+    """Transition is a frozen dataclass with exact field contract."""
+
+    def _make_transition(self, **overrides):
+        defaults = {
+            "obs": {"territory_owner": np.zeros(42, dtype=np.int32)},
+            "action": {"action_type": 5, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0},
+            "reward": 1.0,
+        }
+        return Transition(**{**defaults, **overrides})
+
+    def test_when_transition_constructed_then_obs_stored(self):
+        obs = {"territory_owner": np.ones(42, dtype=np.int32)}
+        t = self._make_transition(obs=obs)
+        assert t.obs is obs
+
+    def test_when_transition_constructed_then_action_stored(self):
+        action = {"action_type": 2, "param_a": 1, "param_b": 2, "param_c": 3, "param_d": 0}
+        t = self._make_transition(action=action)
+        assert t.action == action
+
+    def test_when_transition_constructed_then_reward_stored(self):
+        t = self._make_transition(reward=-0.5)
+        assert t.reward == -0.5
+
+    def test_when_log_prob_omitted_then_default_is_nan(self):
+        t = self._make_transition()
+        assert math.isnan(t.log_prob)
+
+    def test_when_value_omitted_then_default_is_nan(self):
+        t = self._make_transition()
+        assert math.isnan(t.value)
+
+    def test_when_legal_actions_omitted_then_default_is_empty_list(self):
+        t = self._make_transition()
+        assert t.legal_actions == []
+
+    def test_when_legal_actions_omitted_then_instances_do_not_share_list(self):
+        t1 = self._make_transition()
+        t2 = self._make_transition()
+        assert t1.legal_actions is not t2.legal_actions
+
+    def test_when_log_prob_provided_then_value_stored(self):
+        t = self._make_transition(log_prob=-1.23)
+        assert t.log_prob == pytest.approx(-1.23)
+
+    def test_when_value_provided_then_value_stored(self):
+        t = self._make_transition(value=0.75)
+        assert t.value == pytest.approx(0.75)
+
+
+class TestTransitionIter:
+    """Transition.__iter__ yields (obs, action, reward) for 3-tuple unpacking."""
+
+    def _base(self):
+        obs = {"territory_owner": np.zeros(42, dtype=np.int32)}
+        action = {"action_type": 5, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0}
+        return obs, action
+
+    def test_when_unpacked_then_yields_three_items(self):
+        obs, action = self._base()
+        items = list(Transition(obs=obs, action=action, reward=2.0))
+        assert len(items) == 3
+
+    def test_when_unpacked_then_first_item_is_obs(self):
+        obs, action = self._base()
+        unpacked_obs, _, _ = Transition(obs=obs, action=action, reward=2.0)
+        assert unpacked_obs is obs
+
+    def test_when_unpacked_then_second_item_is_action(self):
+        obs, action = self._base()
+        _, unpacked_action, _ = Transition(obs=obs, action=action, reward=2.0)
+        assert unpacked_action is action
+
+    def test_when_unpacked_then_third_item_is_reward(self):
+        obs, action = self._base()
+        _, _, reward = Transition(obs=obs, action=action, reward=-0.1)
+        assert reward == pytest.approx(-0.1)
+
+    def test_when_iterated_in_for_loop_then_unpacks_correctly(self):
+        obs = {"territory_owner": np.zeros(42, dtype=np.int32)}
+        action = {"action_type": 1, "param_a": 3, "param_b": 2, "param_c": 0, "param_d": 0}
+        trajectories = [Transition(obs=obs, action=action, reward=0.5)]
+        for o, a, r in trajectories:
+            assert o is obs
+            assert a is action
+            assert r == pytest.approx(0.5)
+
+
+class TestTransitionFrozen:
+    """Transition must be frozen — mutation must raise an error."""
+
+    def test_when_reward_mutated_then_error_raised(self):
+        t = Transition(
+            obs={},
+            action={"action_type": 5, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0},
+            reward=1.0,
+        )
+        with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+            t.reward = 99.0
+
+
+class TestTransitionImport:
+    """Both dataclasses importable from src.multi_agent."""
+
+    def test_when_transition_imported_then_class_is_available(self):
+        from src.multi_agent import Transition
+
+        assert Transition is not None
+
+    def test_when_game_result_imported_then_class_is_available(self):
+        from src.multi_agent import GameResult
+
+        assert GameResult is not None
+
+
+class TestGameResultContract:
+    """GameResult frozen dataclass field contract."""
+
+    def _make_result(self, **overrides):
+        defaults = {
+            "winner": 0,
+            "n_turns": 10,
+            "territory_history": [np.zeros(3, dtype=np.int32)],
+            "elimination_order": [],
+            "card_trade_turns": [],
+            "action_log": [],
+            "trajectories": [],
+        }
+        return GameResult(**{**defaults, **overrides})
+
+    def test_when_card_trade_hand_sizes_omitted_then_default_is_empty_list(self):
+        assert self._make_result().card_trade_hand_sizes == []
+
+    def test_when_card_trade_hand_sizes_omitted_then_instances_do_not_share_list(self):
+        r1 = self._make_result()
+        r2 = self._make_result()
+        assert r1.card_trade_hand_sizes is not r2.card_trade_hand_sizes
+
+    def test_when_winner_is_none_then_stored_as_none(self):
+        assert self._make_result(winner=None).winner is None
+
+    def test_when_trajectories_provided_then_stored(self):
+        obs = {"territory_owner": np.zeros(42, dtype=np.int32)}
+        action = {"action_type": 5, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0}
+        t = Transition(obs=obs, action=action, reward=0.0)
+        r = self._make_result(trajectories=[t])
+        assert len(r.trajectories) == 1
+        assert r.trajectories[0] is t
+
+    def test_when_game_result_mutated_then_error_raised(self):
+        r = self._make_result()
+        with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+            r.winner = 99
+
 
 # ------------------------------------------------------------------
 # GameResult

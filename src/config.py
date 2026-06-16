@@ -76,6 +76,7 @@ class TrainingConfig:
     seed: int = 42
     device: str = "auto"
     max_turns: int = 2000
+    config_path: str | None = None
     ppo: PPOConfig = field(default_factory=PPOConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     reward: RewardConfig = field(default_factory=RewardConfig)

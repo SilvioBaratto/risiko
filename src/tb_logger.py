@@ -15,12 +15,13 @@ from src.utils.constants import CONTINENTS
 class TensorBoardLogger:
     """Write training metrics and episode statistics to TensorBoard."""
 
-    def __init__(self, log_dir: Path) -> None:
+    def __init__(self, log_dir: Path | str) -> None:
         """Create a logger backed by a SummaryWriter.
 
         Args:
-            log_dir: Directory for tfevents files.
+            log_dir: Directory for tfevents files (Path or str).
         """
+        log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
         self._writer = SummaryWriter(log_dir=str(log_dir))
         self._win_history: deque[int] = deque(maxlen=100)

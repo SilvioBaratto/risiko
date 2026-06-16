@@ -15,9 +15,12 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from src.config import load_config, merge_cli_overrides  # noqa: E402
+from src.utils.env import ensure_env_loaded  # noqa: E402
 from src.utils.log import setup_logging  # noqa: E402
 
 from .agent_loader import load_agent  # noqa: E402, I001
+
+ensure_env_loaded()
 
 app = typer.Typer(help="Risiko RL — train and evaluate PPO agents")
 

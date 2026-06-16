@@ -34,11 +34,44 @@ def _config_from_dict(raw: dict[str, Any]) -> TrainingConfig:
         eval_freq=raw.get("eval_freq", 50),
         seed=raw.get("seed", 42),
         device=raw.get("device", "auto"),
+        max_turns=raw.get("max_turns", 2000),
+        config_path=raw.get("config_path"),
         ppo=PPOConfig(**ppo_raw),
         network=NetworkConfig(**network_raw),
         reward=RewardConfig(**reward_raw),
         self_play=SelfPlayConfig(**self_play_raw),
     )
+
+
+def save_checkpoint(
+    path: str | Path,
+    *,
+    config: TrainingConfig,
+    model_state_dict: dict[str, Any],
+    optimizer_state_dict: dict[str, Any],
+) -> None:
+    """Save a lightweight checkpoint with config + model + optimizer state."""
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "config": _config_to_dict(config),
+            "model_state_dict": model_state_dict,
+            "optimizer_state_dict": optimizer_state_dict,
+        },
+        dest,
+    )
+
+
+def load_checkpoint(path: str | Path) -> dict[str, Any]:
+    """Load a checkpoint produced by :func:`save_checkpoint`.
+
+    Returns a dict with keys ``config``, ``model_state_dict``,
+    ``optimizer_state_dict``.
+    """
+    payload = torch.load(Path(path), weights_only=False)
+    payload["config"] = _config_from_dict(payload["config"])
+    return payload
 
 
 class CheckpointManager:

@@ -21,9 +21,11 @@ pyyaml>=6.0
 pytest>=9.0.3
 pytest-cov>=7.1.0
 ruff>=0.15.12
+hypothesis>=6.0.0
 
-# Native Ollama HTTP client
+# Azure OpenAI HTTP client + .env loading
 httpx>=0.28.0
+python-dotenv>=1.0.0
 
 # Viz
 Pillow>=10.0.0

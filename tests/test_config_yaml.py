@@ -74,14 +74,14 @@ class TestRandom6pPretrainYaml:
 class TestDefault6pProfiles:
     """default_6p.yaml — the per-player LLM sampling pool (not a TrainingConfig)."""
 
-    PROFILE_KEYS = {"temperature", "top_p", "top_k", "repeat_penalty", "strategy_hint"}
+    PROFILE_KEYS = {"temperature", "top_p", "strategy_hint", "model"}
 
     def test_when_loaded_then_exactly_six_profiles(self) -> None:
         """The pool holds six player profiles."""
         assert len(_raw("default_6p.yaml")) == 6
 
     def test_when_loaded_then_each_profile_has_required_keys(self) -> None:
-        """Every profile carries the five sampling fields."""
+        """Every profile carries the required sampling fields."""
         for profile in _raw("default_6p.yaml"):
             assert set(profile) >= self.PROFILE_KEYS
 
