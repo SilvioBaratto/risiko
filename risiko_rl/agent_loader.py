@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import torch
-
 from src.agents.llm_opponent import LLMOpponent
 from src.agents.player_config import load_profiles_from_yaml
 from src.agents.ppo_agent import PPOAgent
@@ -14,6 +12,7 @@ from src.agents.random_agent import RandomAgent
 from src.models.actor_critic import ActorCritic
 from src.models.utils import get_obs_dim
 from src.utils.constants import ACTION_DIMS
+from src.utils.safe_torch import safe_torch_load
 
 
 def load_agent(spec: str, *, seed: int | None = None) -> Any:
@@ -42,7 +41,7 @@ def load_agent(spec: str, *, seed: int | None = None) -> Any:
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {spec}")
 
-    checkpoint = torch.load(path, weights_only=False)
+    checkpoint = safe_torch_load(path)
     config = checkpoint.get("config", {})
     network_cfg = config.get("network", {})
     hidden_sizes = network_cfg.get("hidden_sizes", (256, 256))
