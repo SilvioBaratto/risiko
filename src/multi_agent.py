@@ -16,6 +16,13 @@ from src.utils.log import get_logger
 
 _log = get_logger("runner")
 
+# A single player-turn expands into several env steps (trade, reinforce, one
+# step per attack, capture-move, fortify). ``max_turns`` caps *player-turns*,
+# so this backstops a pathological policy that never ends its turn from
+# looping forever: the game also aborts after ``max_turns * _STEPS_PER_TURN_CAP``
+# env steps. Empirically ~6 steps/turn under random play, so this is generous.
+_STEPS_PER_TURN_CAP = 200
+
 
 @dataclass(frozen=True)
 class Transition:
@@ -66,7 +73,7 @@ class MultiAgentRunner:
         self,
         env: RisikoEnv,
         agents: Sequence[Agent],
-        max_turns: int = 10_000,
+        max_turns: int = 1000,
     ) -> None:
         """Initialise runner with environment and agent list."""
         self._env = env
@@ -85,8 +92,12 @@ class MultiAgentRunner:
         )
         obs, info = self._env.reset(seed=seed)
         recorder = _GameRecorder(self._env, self._n_players)
-        turn = 0
-        while turn < self._max_turns:
+        step = 0
+        step_ceiling = self._max_turns * _STEPS_PER_TURN_CAP
+        # ``max_turns`` caps player-turns, not env steps. A turn spans several
+        # phase-actions, so we advance until the env has completed that many
+        # turns (``state.turns_elapsed``), with a hard env-step backstop.
+        while self._env.state.turns_elapsed < self._max_turns and step < step_ceiling:
             player = int(obs["current_player"])
             legal = info["legal_actions"]
             action, log_prob, value = self._pick_action(player, obs, legal)
@@ -94,14 +105,15 @@ class MultiAgentRunner:
             prev_trade_count = self._env.state.trade_count
             obs, reward, terminated, truncated, info = self._env.step(action)
             recorder.record_step(obs, action, reward, log_prob, value, legal)
-            recorder.detect_trade(prev_trade_count, turn)
-            turn += 1
+            recorder.detect_trade(prev_trade_count, self._env.state.turns_elapsed)
+            step += 1
             if terminated or truncated:
                 _log.info(
-                    "game ended early — terminated=%s truncated=%s turn=%d",
+                    "game ended early — terminated=%s truncated=%s turns=%d steps=%d",
                     terminated,
                     truncated,
-                    turn,
+                    self._env.state.turns_elapsed,
+                    step,
                 )
                 break
         result = recorder.build_result()

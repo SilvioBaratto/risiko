@@ -249,7 +249,7 @@ class TestMultiAgentRunnerInit:
         env = RisikoEnv(n_players=2)
         agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
         runner = MultiAgentRunner(env, agents)
-        assert runner._max_turns == 10_000
+        assert runner._max_turns == 1000
 
 
 # ------------------------------------------------------------------
@@ -345,8 +345,11 @@ class TestMultiAgentRunnerRunGame:
         env = RisikoEnv(n_players=2)
         runner = MultiAgentRunner(env, two_player_agents, max_turns=5)
         result = runner.run_game(seed=42)
-        # Game should be truncated before completion
-        assert result.n_turns == 5
+        # max_turns caps PLAYER-TURNS, not env steps: the game stops once the
+        # env has completed 5 turns. n_turns counts env steps (transitions), so
+        # it spans several steps per turn and exceeds the player-turn cap.
+        assert env.state.turns_elapsed == 5
+        assert result.n_turns >= 5
         assert result.winner is None
 
 
