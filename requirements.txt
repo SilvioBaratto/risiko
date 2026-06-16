@@ -23,7 +23,7 @@ pytest-cov>=7.1.0
 ruff>=0.15.12
 hypothesis>=6.0.0
 
-# Azure OpenAI HTTP client + .env loading
+# Ollama HTTP client (local or cloud) + .env loading
 httpx>=0.28.0
 python-dotenv>=1.0.0
 

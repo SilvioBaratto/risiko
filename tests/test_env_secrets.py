@@ -1,7 +1,7 @@
 """Source-blind tests for .env.example, git-ignore, and render_action_prompt() — Issue #56.
 
 Criteria covered:
-- .env.example keys exactly match AZURE_OPENAI_BASE_URL / _API_KEY / _API_VERSION
+- .env.example keys exactly match OLLAMA_BASE_URL / OLLAMA_API_KEY
 - git check-ignore .env confirms .env is ignored
 - render_action_prompt() returns a non-empty string, embeds legal action indices,
   prepends strategy_hint before the actions list, and never leaks the API key.
@@ -25,9 +25,8 @@ _REPO_ROOT = Path(__file__).parent.parent  # tests/ → repo root
 _ENV_EXAMPLE = _REPO_ROOT / ".env.example"
 
 _REQUIRED_KEYS = {
-    "AZURE_OPENAI_BASE_URL",
-    "AZURE_OPENAI_API_KEY",
-    "AZURE_OPENAI_API_VERSION",
+    "OLLAMA_BASE_URL",
+    "OLLAMA_API_KEY",
 }
 
 
@@ -48,23 +47,18 @@ def env_example_keys(env_example_lines) -> set[str]:
     return {line.split("=", 1)[0].strip() for line in env_example_lines if "=" in line}
 
 
-def test_env_example_contains_azure_openai_base_url(env_example_keys):
-    """Criterion: .env.example must declare AZURE_OPENAI_BASE_URL."""
-    assert "AZURE_OPENAI_BASE_URL" in env_example_keys
+def test_env_example_contains_ollama_base_url(env_example_keys):
+    """Criterion: .env.example must declare OLLAMA_BASE_URL."""
+    assert "OLLAMA_BASE_URL" in env_example_keys
 
 
-def test_env_example_contains_azure_openai_api_key(env_example_keys):
-    """Criterion: .env.example must declare AZURE_OPENAI_API_KEY."""
-    assert "AZURE_OPENAI_API_KEY" in env_example_keys
-
-
-def test_env_example_contains_azure_openai_api_version(env_example_keys):
-    """Criterion: .env.example must declare AZURE_OPENAI_API_VERSION."""
-    assert "AZURE_OPENAI_API_VERSION" in env_example_keys
+def test_env_example_contains_ollama_api_key(env_example_keys):
+    """Criterion: .env.example must declare OLLAMA_API_KEY."""
+    assert "OLLAMA_API_KEY" in env_example_keys
 
 
 def test_env_example_keys_exactly_match_required_set(env_example_keys):
-    """Criterion: .env.example keys exactly match the three required env vars.
+    """Criterion: .env.example keys exactly match the two required env vars.
 
     No extra undeclared keys and no missing keys.
     """
@@ -173,16 +167,16 @@ def test_when_strategy_hint_provided_then_it_appears_before_legal_actions_sectio
     )
 
 
-def test_when_render_action_prompt_is_called_then_azure_api_key_literal_is_absent():
-    """The prompt output must never contain a hardcoded Azure API key value.
+def test_when_render_action_prompt_is_called_then_ollama_api_key_literal_is_absent():
+    """The prompt output must never contain a hardcoded Ollama API key value.
 
     Criterion: the API key is never hardcoded in source.
     """
     from src.agents.action_prompt import render_action_prompt
 
     known_key_patterns = [
-        "AZURE_OPENAI_API_KEY=",
-        "api-key:",
+        "OLLAMA_API_KEY=",
+        "Authorization:",
     ]
     result = render_action_prompt(_FAKE_OBS, _FAKE_LEGAL)
     for pattern in known_key_patterns:

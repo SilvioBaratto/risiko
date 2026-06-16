@@ -2,7 +2,7 @@
 
 **Research question:** What is the best strategy to win at Risiko (Risk)?
 
-This project trains a PPO agent to discover optimal Risiko strategy purely through self-play and games against an Azure OpenAI GPT-4.1 LLM opponent.
+This project trains a PPO agent to discover optimal Risiko strategy purely through self-play and games against an Ollama-served LLM opponent — run locally for free or against a hosted big model (e.g. `gpt-oss:120b`) on Ollama Cloud.
 
 ---
 
@@ -16,28 +16,35 @@ Python 3.12+ required. PyTorch and all dependencies are pinned in `requirements.
 
 ---
 
-## Azure OpenAI setup
+## Ollama setup
 
-The LLM opponent calls **Azure OpenAI (GPT-4.1)** via the `/chat/completions` endpoint with a `response_format` JSON schema (`strict: true`) that constrains the reply to `{"action_index": <int>}` — an index into the legal-action list, so the chosen move is legal by construction and the response is ~10 tokens.
+The LLM opponent calls **Ollama** via the OpenAI-compatible `/v1/chat/completions` endpoint with a `response_format` JSON schema (`strict: true`) that constrains the reply to `{"action_index": <int>}` — an index into the legal-action list, so the chosen move is legal by construction and the response is tiny.
 
-Credentials live in a git-ignored `.env` at the project root. Copy the template and fill it in:
+One client serves both modes; they differ only in `base_url`, key, and model:
+
+**Local (free, no key):** install [Ollama](https://ollama.com), pull a model, and you're done — no `.env` needed (the client defaults to `http://localhost:11434/v1`).
+
+```bash
+ollama pull gpt-oss:20b
+```
+
+**Cloud (Ollama Turbo, hosted big models like `gpt-oss:120b`):** copy the template and set your key:
 
 ```bash
 cp .env.example .env
-# then edit .env with your Azure resource values
+# then set OLLAMA_BASE_URL=https://ollama.com/v1 and OLLAMA_API_KEY=<your key>
 ```
 
-`src/utils/env.py:ensure_env_loaded()` loads it once per process (called by the CLI; lazily by the client). Auth uses the `api-key` header.
+`src/utils/env.py:ensure_env_loaded()` loads `.env` once per process (called by the CLI; lazily by the client). Auth uses the standard `Authorization: Bearer <key>` header. Local serving ignores the key, so any placeholder works.
 
 ---
 
-## Required environment variables
+## Environment variables (optional — only for cloud)
 
 | Variable | Example | Purpose |
 |---|---|---|
-| `AZURE_OPENAI_BASE_URL` | `https://<resource>.api.cognitive.microsoft.com/openai/deployments/gpt-4.1` | Resource + deployment URL; the client appends `/chat/completions?api-version=...` |
-| `AZURE_OPENAI_API_VERSION` | `2024-12-01-preview` | API version query parameter |
-| `AZURE_OPENAI_API_KEY` | `your-azure-openai-api-key` | Sent as the `api-key` request header |
+| `OLLAMA_BASE_URL` | `https://ollama.com/v1` (cloud) / `http://localhost:11434/v1` (local, default) | OpenAI-compatible base URL; the client appends `/chat/completions` |
+| `OLLAMA_API_KEY` | `your-ollama-api-key` | Sent as `Authorization: Bearer <key>`; ignored by local serving |
 
 `LLMOpponent` enforces a hard 30 s timeout per move via a `ThreadPoolExecutor` and falls back to a `RandomAgent` on any timeout, HTTP error, parse error, or out-of-range index — the returned action is always legal.
 
@@ -147,14 +154,14 @@ Win rates at 6 players (random baseline ≈ 1/6 ≈ 16.7%):
 | Agent | Win rate | Notes |
 |---|---|---|
 | Random | ≈ 16% | Uniform action sampling |
-| LLM (GPT-4.1) | ≈ 25–35% | Zero-shot tactical reasoning |
+| LLM (gpt-oss) | ≈ 25–35% | Zero-shot tactical reasoning |
 | PPO (target) | > 35% | Self-play + LLM curriculum |
 
 ---
 
 ## Six-player LLM profiles
 
-Defined in `config/default_6p.yaml`. Each slot uses GPT-4.1 with a distinct `temperature`/`top_p` and a strategy hint injected into the prompt.
+Defined in `config/default_6p.yaml`. Each slot uses `gpt-oss:120b` (override per slot via the `model` field) with a distinct `temperature`/`top_p` and a strategy hint injected into the prompt.
 
 | Player | Temp | Top-p | Strategy hint |
 |---|---|---|---|

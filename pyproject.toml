@@ -35,6 +35,7 @@ dependencies = [
     "typer>=0.15.0",
     "pyyaml>=6.0",
     "httpx>=0.28.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +43,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.12",
+    "hypothesis>=6.0.0",
     "playwright>=1.59.0",
 ]
 

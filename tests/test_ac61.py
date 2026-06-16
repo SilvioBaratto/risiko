@@ -1,10 +1,10 @@
 """
 Acceptance tests for issue #61:
-feat: wire Azure LLM opponents into CLI, agent loader, and self-play training
+feat: wire Ollama LLM opponents into CLI, agent loader, and self-play training
 
 Criteria the oracle marks NOT VERIFIABLE (non-blocking timeout, determinism,
 hyperparameter-YAML wiring, baseline win-rates, all-tests-pass, clean-code)
-are omitted.  Code-coverage ≥ 80% is a CI gate, not a unit assertion.
+are omitted.  Code-coverage >= 80% is a CI gate, not a unit assertion.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ _PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 
 
 def _fake_httpx_response(action_index: int = 0) -> MagicMock:
-    """Return a mock that looks like an httpx.Response from Azure."""
+    """Return a mock that looks like an httpx.Response from Ollama."""
     content = json.dumps({"action_index": action_index})
     body = {"choices": [{"message": {"content": content}}]}
     resp = MagicMock()
@@ -69,7 +69,7 @@ def _minimal_legal() -> list[dict]:
 def _write_player_profiles(path: pathlib.Path, n: int) -> None:
     """Write N player profiles as a flat YAML list.
 
-    player_id runs 0..n-1 so all ids stay in the valid 0–5 range for n ≤ 6.
+    player_id runs 0..n-1 so all ids stay in the valid 0-5 range for n <= 6.
     """
     profiles = [
         {
@@ -77,7 +77,7 @@ def _write_player_profiles(path: pathlib.Path, n: int) -> None:
             "temperature": round(0.1 + 0.1 * i, 1),
             "top_p": 0.9,
             "strategy_hint": f"Profile {i}: play optimally.",
-            "model": "gpt-4.1",
+            "model": "gpt-oss:120b",
         }
         for i in range(n)
     ]
@@ -85,22 +85,18 @@ def _write_player_profiles(path: pathlib.Path, n: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# [T2] LLM opponent calls Azure OpenAI via /chat/completions
+# [T2] LLM opponent calls Ollama via /chat/completions
 #      with json_schema strict output
 # ---------------------------------------------------------------------------
 
 
-class TestAzureApiContract:
-    """The Azure client must POST to /chat/completions with json_schema strict."""
+class TestOllamaApiContract:
+    """The Ollama client must POST to /chat/completions with json_schema strict."""
 
     def _call_with_capture(self, monkeypatch) -> dict:
-        """Call call_azure_for_action_index; return the captured httpx.post kwargs."""
-        monkeypatch.setenv(
-            "AZURE_OPENAI_BASE_URL",
-            "https://fake.openai.azure.com/openai/deployments/gpt-4.1",
-        )
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fake-key-for-test")
-        monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+        """Call call_ollama_for_action_index; return the captured httpx.post kwargs."""
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
 
         captured: dict = {}
 
@@ -109,16 +105,16 @@ class TestAzureApiContract:
             captured["kwargs"] = kwargs
             return _fake_httpx_response(0)
 
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         with (
             patch("httpx.post", side_effect=fake_post),
-            patch("src.agents.azure_openai.render_action_prompt", return_value="test prompt"),
+            patch("src.agents.ollama_client.render_action_prompt", return_value="test prompt"),
         ):
-            call_azure_for_action_index(
+            call_ollama_for_action_index(
                 _minimal_obs(),
                 _minimal_legal(),
-                model="gpt-4.1",
+                model="gpt-oss:120b",
             )
         return captured
 
@@ -158,46 +154,46 @@ class TestAzureApiContract:
             f"Schema must declare 'action_index'; got {schema!r}"
         )
 
-    def test_when_action_requested_then_api_key_header_is_set(self, monkeypatch) -> None:
-        """Request must use 'api-key' header (Azure convention, not Bearer)."""
+    def test_when_action_requested_then_authorization_bearer_header_is_set(
+        self, monkeypatch
+    ) -> None:
+        """Request must use 'Authorization: Bearer <key>' header (Ollama convention)."""
         captured = self._call_with_capture(monkeypatch)
         headers = captured["kwargs"].get("headers", {})
-        lower_keys = {k.lower() for k in headers}
-        assert "api-key" in lower_keys, f"'api-key' header must be present; got {list(headers)!r}"
+        lower_keys = {k.lower(): v for k, v in headers.items()}
+        assert "authorization" in lower_keys, (
+            f"'Authorization' header must be present; got {list(headers)!r}"
+        )
+        assert lower_keys["authorization"].startswith("Bearer "), (
+            f"Authorization must use Bearer scheme; got {lower_keys['authorization']!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
-# [UNIT] Azure credentials load from .env; .env.example is committed
+# [UNIT] Ollama credentials load from .env; .env.example is committed
 # ---------------------------------------------------------------------------
 
 
-class TestAzureCredentials:
+class TestOllamaCredentials:
     def test_when_env_example_checked_then_file_exists_at_project_root(self) -> None:
         """.env.example must exist at the project root (committed to git)."""
         assert (_PROJECT_ROOT / ".env.example").exists(), (
             ".env.example must be present and committed"
         )
 
-    def test_when_env_example_read_then_azure_base_url_placeholder_is_present(
+    def test_when_env_example_read_then_ollama_base_url_placeholder_is_present(
         self,
     ) -> None:
-        """.env.example must contain AZURE_OPENAI_BASE_URL."""
+        """.env.example must contain OLLAMA_BASE_URL."""
         content = (_PROJECT_ROOT / ".env.example").read_text()
-        assert "AZURE_OPENAI_BASE_URL" in content
+        assert "OLLAMA_BASE_URL" in content
 
-    def test_when_env_example_read_then_azure_api_key_placeholder_is_present(
+    def test_when_env_example_read_then_ollama_api_key_placeholder_is_present(
         self,
     ) -> None:
-        """.env.example must contain AZURE_OPENAI_API_KEY."""
+        """.env.example must contain OLLAMA_API_KEY."""
         content = (_PROJECT_ROOT / ".env.example").read_text()
-        assert "AZURE_OPENAI_API_KEY" in content
-
-    def test_when_env_example_read_then_azure_api_version_placeholder_is_present(
-        self,
-    ) -> None:
-        """.env.example must contain AZURE_OPENAI_API_VERSION."""
-        content = (_PROJECT_ROOT / ".env.example").read_text()
-        assert "AZURE_OPENAI_API_VERSION" in content
+        assert "OLLAMA_API_KEY" in content
 
     def test_when_gitignore_checked_then_dotenv_file_is_ignored(self) -> None:
         """.env must appear in .gitignore so credentials are never committed."""
@@ -208,13 +204,56 @@ class TestAzureCredentials:
 
     def test_when_ensure_env_loaded_called_twice_then_no_error_is_raised(self, monkeypatch) -> None:
         """ensure_env_loaded() must be idempotent — calling it twice must not raise."""
-        monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://fake")
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fake-key")
-        monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2025-01")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
         from src.utils.env import ensure_env_loaded
 
         ensure_env_loaded()
         ensure_env_loaded()  # must not raise
+
+    def test_when_no_creds_in_env_then_client_defaults_to_localhost(self) -> None:
+        """Without env vars the client must fall back to localhost, not raise."""
+        import os
+
+        from src.agents.ollama_client import DEFAULT_API_KEY, DEFAULT_BASE_URL
+
+        assert DEFAULT_BASE_URL.startswith("http://localhost"), (
+            f"DEFAULT_BASE_URL must point at localhost; got {DEFAULT_BASE_URL!r}"
+        )
+        assert DEFAULT_API_KEY == "ollama", (
+            f"DEFAULT_API_KEY must be 'ollama'; got {DEFAULT_API_KEY!r}"
+        )
+
+        # Verify the client builds the correct URL/key when env is absent
+
+        captured: dict = {}
+
+        def fake_post(url, **kwargs):
+            captured["url"] = url
+            captured["headers"] = kwargs.get("headers", {})
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "choices": [{"message": {"content": json.dumps({"action_index": 0})}}]
+            }
+            resp.raise_for_status = MagicMock(return_value=None)
+            return resp
+
+        excluded = {"OLLAMA_BASE_URL", "OLLAMA_API_KEY"}
+        clean_env = {k: v for k, v in os.environ.items() if k not in excluded}
+        with (
+            patch.dict(os.environ, clean_env, clear=True),
+            patch("httpx.post", side_effect=fake_post),
+        ):
+            from src.agents.ollama_client import call_ollama_for_action_index
+
+            call_ollama_for_action_index(_minimal_obs(), _minimal_legal(), model="gpt-oss:120b")
+
+        assert "localhost" in captured.get("url", ""), (
+            f"URL must contain localhost when no env var set; got {captured.get('url')!r}"
+        )
+        auth = captured.get("headers", {}).get("Authorization", "")
+        assert "Bearer" in auth, f"Authorization must use Bearer scheme; got {auth!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -321,8 +360,8 @@ class TestRenderActionPrompt:
         self, monkeypatch
     ) -> None:
         """The rendered prompt must never contain the raw API key value."""
-        secret = "super-secret-azure-key-xyz-98765"
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", secret)
+        secret = "super-secret-ollama-key-xyz-98765"
+        monkeypatch.setenv("OLLAMA_API_KEY", secret)
         from src.agents.action_prompt import render_action_prompt
 
         result = render_action_prompt(_minimal_obs(), _minimal_legal())
@@ -668,14 +707,14 @@ class TestBuildLlmOpponents:
                         "temperature": 0.1,
                         "top_p": 0.9,
                         "strategy_hint": "greedy",
-                        "model": "gpt-4.1",
+                        "model": "gpt-oss:120b",
                     },
                     {
                         "player_id": 1,
                         "temperature": 0.9,
                         "top_p": 0.8,
                         "strategy_hint": "random",
-                        "model": "gpt-4.1",
+                        "model": "gpt-oss:120b",
                     },
                 ]
             )
@@ -705,24 +744,12 @@ class TestBuildLlmOpponents:
 
 
 # ---------------------------------------------------------------------------
-# [UNIT] No Ollama/BAML references in risiko_rl/, training/, config/
+# [UNIT] No BAML references in risiko_rl/, training/, config/
+#        (Ollama references are expected in src/ — not scanned here)
 # ---------------------------------------------------------------------------
 
 
-class TestNoOllamaBamlReferences:
-    @pytest.mark.parametrize("directory", ["risiko_rl", "training", "config"])
-    def test_when_directory_scanned_then_no_ollama_references_found(self, directory: str) -> None:
-        """No file under the directory may reference Ollama."""
-        target = _PROJECT_ROOT / directory
-        if not target.exists():
-            pytest.skip(f"{directory}/ does not exist yet")
-        result = subprocess.run(
-            ["grep", "-ri", "ollama", str(target)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.stdout == "", f"Ollama reference(s) found in {directory}/:\n{result.stdout}"
-
+class TestNoBamlReferences:
     @pytest.mark.parametrize("directory", ["risiko_rl", "training", "config"])
     def test_when_directory_scanned_then_no_baml_references_found(self, directory: str) -> None:
         """No file under the directory may reference BAML."""

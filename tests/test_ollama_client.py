@@ -1,14 +1,16 @@
-"""Source-blind example tests for src.agents.azure_openai — Issue #56.
+"""Source-blind example tests for src.agents.ollama_client — migrated from Azure contract.
 
 Derived exclusively from acceptance criteria; no implementation source was read.
 All HTTP calls and env-loading are mocked. No real .env is read.
 
 Criteria covered:
-- call_azure_for_action_index() POSTs to /chat/completions?api-version=...
-  with the api-key header and response_format json_schema strict:true
+- call_ollama_for_action_index() POSTs to {base}/chat/completions with NO api-version query string
+- Auth uses Authorization: Bearer <key> header (NOT api-key)
+- Request body sets response_format json_schema with strict:true
 - Returns an index in [0, len(legal_actions)) or None on empty/unparseable/out-of-range reply
 - Per-call temperature and top_p injected verbatim; top_p omitted when None
-- Raises AzureConfigError when AZURE_OPENAI_BASE_URL or AZURE_OPENAI_API_KEY is unresolved
+- When OLLAMA_BASE_URL / OLLAMA_API_KEY are unset, falls back to defaults (localhost + "ollama")
+  — AzureConfigError no longer exists; missing creds are never an error
 """
 
 from __future__ import annotations
@@ -24,17 +26,17 @@ from hypothesis import strategies as st
 # Shared test doubles
 # ──────────────────────────────────────────────────────────────────────────────
 
-_FAKE_BASE_URL = "https://fake.openai.azure.com/openai/deployments/gpt-4.1"
+_FAKE_BASE_URL = "http://fake-ollama.local/v1"
 _FAKE_API_KEY = "test-key-never-commit-this"
-_FAKE_API_VERSION = "2024-02-15-preview"
 
 _FAKE_ENV = {
-    "AZURE_OPENAI_BASE_URL": _FAKE_BASE_URL,
-    "AZURE_OPENAI_API_KEY": _FAKE_API_KEY,
-    "AZURE_OPENAI_API_VERSION": _FAKE_API_VERSION,
+    "OLLAMA_BASE_URL": _FAKE_BASE_URL,
+    "OLLAMA_API_KEY": _FAKE_API_KEY,
 }
 
 _FAKE_OBS: dict = {}  # minimal placeholder; real obs built by env internally
+
+_DEFAULT_MODEL = "gpt-oss:120b"
 
 
 @pytest.fixture(autouse=True)
@@ -45,8 +47,8 @@ def _no_dotenv():
     it keeps these tests focused purely on the HTTP-client contract.
     """
     with (
-        patch("src.agents.azure_openai.ensure_env_loaded", return_value=None),
-        patch("src.agents.azure_openai.render_action_prompt", return_value="fake prompt"),
+        patch("src.agents.ollama_client.ensure_env_loaded", return_value=None),
+        patch("src.agents.ollama_client.render_action_prompt", return_value="fake prompt"),
     ):
         yield
 
@@ -68,9 +70,6 @@ def _resp(action_index: int | None = 0) -> MagicMock:
     return _fake_response(json.dumps({"action_index": action_index}))
 
 
-_DEFAULT_MODEL = "gpt-4.1"
-
-
 def _call(
     legal_actions: list,
     *,
@@ -79,17 +78,17 @@ def _call(
     resp: MagicMock | None = None,
     model: str = _DEFAULT_MODEL,
 ):
-    """Invoke call_azure_for_action_index() with all I/O mocked."""
-    from src.agents.azure_openai import call_azure_for_action_index
+    """Invoke call_ollama_for_action_index() with all I/O mocked."""
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     if resp is None:
         resp = _resp(0)
 
     with (
         patch.dict("os.environ", _FAKE_ENV, clear=False),
-        patch("src.agents.azure_openai.httpx.post", return_value=resp) as mock_post,
+        patch("src.agents.ollama_client.httpx.post", return_value=resp) as mock_post,
     ):
-        result = call_azure_for_action_index(
+        result = call_ollama_for_action_index(
             _FAKE_OBS,
             legal_actions,
             model=model,
@@ -104,8 +103,8 @@ def _call(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_when_called_then_posts_to_url_containing_chat_completions():
-    """call_azure_for_action_index() must POST to a URL containing /chat/completions."""
+def test_when_ollama_called_then_posts_to_url_containing_chat_completions():
+    """call_ollama_for_action_index() must POST to a URL containing /chat/completions."""
     _, mock_post = _call(["a", "b"])
 
     assert mock_post.called
@@ -113,23 +112,31 @@ def test_when_called_then_posts_to_url_containing_chat_completions():
     assert "/chat/completions" in url
 
 
-def test_when_called_then_url_contains_api_version_query_param():
-    """The POST URL must include an api-version= query parameter."""
+def test_when_ollama_called_then_url_does_not_contain_api_version_query_param():
+    """The POST URL must NOT include an api-version= query parameter (Ollama has none)."""
     _, mock_post = _call(["a", "b"])
 
     url = mock_post.call_args.args[0]
-    assert "api-version=" in url
+    assert "api-version=" not in url
 
 
-def test_when_called_then_api_key_header_equals_env_var():
-    """The api-key request header must equal AZURE_OPENAI_API_KEY from env."""
+def test_when_ollama_called_then_authorization_bearer_header_equals_env_var():
+    """The Authorization: Bearer header must equal OLLAMA_API_KEY from env."""
     _, mock_post = _call(["a", "b"])
 
     headers = mock_post.call_args.kwargs.get("headers", {})
-    assert headers.get("api-key") == _FAKE_API_KEY
+    assert headers.get("Authorization") == f"Bearer {_FAKE_API_KEY}"
 
 
-def test_when_called_then_response_format_type_is_json_schema():
+def test_when_ollama_called_then_no_api_key_header_is_set():
+    """The old api-key header must NOT be present; Ollama uses Authorization: Bearer."""
+    _, mock_post = _call(["a", "b"])
+
+    headers = mock_post.call_args.kwargs.get("headers", {})
+    assert "api-key" not in headers
+
+
+def test_when_ollama_called_then_response_format_type_is_json_schema():
     """Request body must set response_format.type to 'json_schema'."""
     _, mock_post = _call(["a", "b"])
 
@@ -137,7 +144,7 @@ def test_when_called_then_response_format_type_is_json_schema():
     assert body.get("response_format", {}).get("type") == "json_schema"
 
 
-def test_when_called_then_json_schema_strict_is_true():
+def test_when_ollama_called_then_json_schema_strict_is_true():
     """Request body must set response_format.json_schema.strict to True."""
     _, mock_post = _call(["a", "b"])
 
@@ -151,39 +158,39 @@ def test_when_called_then_json_schema_strict_is_true():
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_when_model_returns_index_0_then_zero_is_returned():
+def test_when_ollama_returns_index_0_then_zero_is_returned():
     """action_index=0 on a non-empty list must return the integer 0."""
     result, _ = _call(["only_action"], resp=_resp(0))
     assert result == 0
 
 
-def test_when_model_returns_valid_mid_index_then_that_integer_is_returned():
+def test_when_ollama_returns_valid_mid_index_then_that_integer_is_returned():
     """A valid action_index within bounds must be returned unchanged."""
     result, _ = _call(["a", "b", "c"], resp=_resp(2))
     assert result == 2
 
 
-def test_when_model_returns_last_valid_index_then_it_is_returned():
+def test_when_ollama_returns_last_valid_index_then_it_is_returned():
     """action_index == len-1 must succeed (boundary check)."""
     legal = ["x", "y", "z"]
     result, _ = _call(legal, resp=_resp(len(legal) - 1))
     assert result == len(legal) - 1
 
 
-def test_when_model_returns_index_equal_to_len_then_none_is_returned():
+def test_when_ollama_returns_index_equal_to_len_then_none_is_returned():
     """action_index == len(legal_actions) is out-of-range → must return None."""
     legal = ["a", "b"]
     result, _ = _call(legal, resp=_resp(len(legal)))
     assert result is None
 
 
-def test_when_model_returns_index_far_out_of_range_then_none_is_returned():
+def test_when_ollama_returns_index_far_out_of_range_then_none_is_returned():
     """action_index far beyond len must silently return None, not raise."""
     result, _ = _call(["a", "b"], resp=_resp(999))
     assert result is None
 
 
-def test_when_model_returns_negative_index_then_none_is_returned():
+def test_when_ollama_returns_negative_index_then_none_is_returned():
     """Negative action_index must return None (out-of-range by spec)."""
     result, _ = _call(["a", "b", "c"], resp=_resp(-1))
     assert result is None
@@ -237,36 +244,45 @@ def test_when_top_p_is_none_then_top_p_key_is_absent_from_body():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Credential error propagation
+# Default-fallback behavior when credentials are unset
+# (replaces the old AzureConfigError tests — Ollama never raises on missing creds)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_when_base_url_env_var_missing_then_azure_config_error_is_raised():
-    """Missing AZURE_OPENAI_BASE_URL must raise AzureConfigError before any HTTP call."""
-    from src.agents.azure_openai import AzureConfigError, call_azure_for_action_index
+def test_when_base_url_env_var_missing_then_defaults_to_localhost():
+    """Missing OLLAMA_BASE_URL must fall back to http://localhost:11434/v1, not raise."""
+    from src.agents.ollama_client import call_ollama_for_action_index
 
-    env_no_base = {k: v for k, v in _FAKE_ENV.items() if k != "AZURE_OPENAI_BASE_URL"}
     with (
-        patch.dict("os.environ", env_no_base, clear=True),
-        pytest.raises(AzureConfigError),
+        patch.dict("os.environ", {}, clear=True),
+        patch("src.agents.ollama_client.httpx.post", return_value=_resp(0)) as mock_post,
     ):
-        call_azure_for_action_index(
+        call_ollama_for_action_index(
             _FAKE_OBS, ["a"], model=_DEFAULT_MODEL, temperature=0.5, top_p=0.9
         )
 
+    url = mock_post.call_args.args[0]
+    assert url.startswith("http://localhost:11434/v1"), (
+        f"Expected localhost fallback URL, got: {url!r}"
+    )
 
-def test_when_api_key_env_var_missing_then_azure_config_error_is_raised():
-    """Missing AZURE_OPENAI_API_KEY must raise AzureConfigError before any HTTP call."""
-    from src.agents.azure_openai import AzureConfigError, call_azure_for_action_index
 
-    env_no_key = {k: v for k, v in _FAKE_ENV.items() if k != "AZURE_OPENAI_API_KEY"}
+def test_when_api_key_env_var_missing_then_defaults_to_ollama_bearer():
+    """Missing OLLAMA_API_KEY must fall back to Authorization: Bearer ollama, not raise."""
+    from src.agents.ollama_client import call_ollama_for_action_index
+
     with (
-        patch.dict("os.environ", env_no_key, clear=True),
-        pytest.raises(AzureConfigError),
+        patch.dict("os.environ", {}, clear=True),
+        patch("src.agents.ollama_client.httpx.post", return_value=_resp(0)) as mock_post,
     ):
-        call_azure_for_action_index(
+        call_ollama_for_action_index(
             _FAKE_OBS, ["a"], model=_DEFAULT_MODEL, temperature=0.5, top_p=0.9
         )
+
+    headers = mock_post.call_args.kwargs.get("headers", {})
+    assert headers.get("Authorization") == "Bearer ollama", (
+        f"Expected 'Bearer ollama' fallback, got: {headers.get('Authorization')!r}"
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -288,14 +304,14 @@ def test_when_index_in_range_then_that_exact_integer_is_always_returned(n, idx):
     if idx >= n:
         return  # out-of-range covered by example tests above
 
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [f"action_{i}" for i in range(n)]
     with (
         patch.dict("os.environ", _FAKE_ENV, clear=False),
-        patch("src.agents.azure_openai.httpx.post", return_value=_resp(idx)),
+        patch("src.agents.ollama_client.httpx.post", return_value=_resp(idx)),
     ):
-        result = call_azure_for_action_index(
+        result = call_ollama_for_action_index(
             _FAKE_OBS, legal, model=_DEFAULT_MODEL, temperature=0.5, top_p=0.9
         )
     assert result == idx
@@ -308,13 +324,13 @@ def test_when_any_valid_temperature_given_then_it_appears_verbatim_in_body(tempe
 
     Invariant: no rounding, clamping, or transformation is applied.
     """
-    from src.agents.azure_openai import call_azure_for_action_index
+    from src.agents.ollama_client import call_ollama_for_action_index
 
     with (
         patch.dict("os.environ", _FAKE_ENV, clear=False),
-        patch("src.agents.azure_openai.httpx.post", return_value=_resp(0)) as mock_post,
+        patch("src.agents.ollama_client.httpx.post", return_value=_resp(0)) as mock_post,
     ):
-        call_azure_for_action_index(
+        call_ollama_for_action_index(
             _FAKE_OBS, ["a"], model=_DEFAULT_MODEL, temperature=temperature, top_p=None
         )
 

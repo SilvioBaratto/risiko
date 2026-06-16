@@ -5,7 +5,7 @@ Covers:
 - GAE on compute_advantages(): buffer stores transitions, advantages are computed
 - NaN log_prob transitions: skipped by SelfPlayTrainer._buffer_learner_transitions()
 - Checkpoint resumability: episode counter, RNG state, opponent round-trip
-- LLM pool wiring: N-1 LLMOpponents built from profiles YAML (Azure mocked)
+- LLM pool wiring: N-1 LLMOpponents built from profiles YAML (Ollama mocked)
 
 All tests use tiny sizes and seed=0 for speed.
 """
@@ -72,7 +72,7 @@ def _minimal_action() -> dict:
     return {k: torch.tensor(0) for k in ("action_type", "param_a", "param_b", "param_c", "param_d")}
 
 
-def _fake_azure_response(index: int = 0) -> MagicMock:
+def _fake_ollama_response(index: int = 0) -> MagicMock:
     resp = MagicMock()
     resp.status_code = 200
     resp.json.return_value = {
@@ -89,7 +89,7 @@ def _write_player_profiles(path: pathlib.Path, n: int) -> None:
             "temperature": 0.1,
             "top_p": 0.9,
             "strategy_hint": "play optimally",
-            "model": "gpt-4.1",
+            "model": "gpt-oss:120b",
         }
         for i in range(n)
     ]
@@ -395,17 +395,14 @@ class TestLlmPoolWiring:
         profiles = tmp_path / "profiles.yaml"
         _write_player_profiles(profiles, 2)
 
-        monkeypatch.setenv(
-            "AZURE_OPENAI_BASE_URL", "https://fake.azure.com/openai/deployments/gpt-4.1"
-        )
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
 
         cfg = TrainingConfig(
             seed=0,
             self_play=SelfPlayConfig(n_players=3, llm_profiles_path=str(profiles)),
         )
-        with patch("httpx.post", return_value=_fake_azure_response(0)):
+        with patch("httpx.post", return_value=_fake_ollama_response(0)):
             trainer = SelfPlayTrainer(cfg, checkpoint_dir=tmp_path, max_turns=10)
 
         assert trainer._llm_opponents is not None
@@ -419,17 +416,14 @@ class TestLlmPoolWiring:
         profiles = tmp_path / "profiles.yaml"
         _write_player_profiles(profiles, 3)
 
-        monkeypatch.setenv(
-            "AZURE_OPENAI_BASE_URL", "https://fake.azure.com/openai/deployments/gpt-4.1"
-        )
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
 
         cfg = TrainingConfig(
             seed=0,
             self_play=SelfPlayConfig(n_players=4, llm_profiles_path=str(profiles)),
         )
-        with patch("httpx.post", return_value=_fake_azure_response(0)):
+        with patch("httpx.post", return_value=_fake_ollama_response(0)):
             trainer = SelfPlayTrainer(cfg, checkpoint_dir=tmp_path, max_turns=10)
 
         assert trainer._llm_opponents is not None
@@ -437,17 +431,14 @@ class TestLlmPoolWiring:
         assert all(isinstance(o, LLMOpponent) for o in trainer._llm_opponents)
 
     def test_no_http_call_on_trainer_construction(self, tmp_path, monkeypatch) -> None:
-        """LLMOpponent construction must not make any Azure HTTP requests."""
+        """LLMOpponent construction must not make any Ollama HTTP requests."""
         from training.self_play import SelfPlayTrainer
 
         profiles = tmp_path / "profiles.yaml"
         _write_player_profiles(profiles, 1)
 
-        monkeypatch.setenv(
-            "AZURE_OPENAI_BASE_URL", "https://fake.azure.com/openai/deployments/gpt-4.1"
-        )
-        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
 
         cfg = TrainingConfig(
             seed=0,
@@ -458,7 +449,7 @@ class TestLlmPoolWiring:
 
         def _counting(*a: Any, **kw: Any) -> MagicMock:
             calls.append(1)
-            return _fake_azure_response(0)
+            return _fake_ollama_response(0)
 
         with patch("httpx.post", side_effect=_counting):
             SelfPlayTrainer(cfg, checkpoint_dir=tmp_path, max_turns=10)

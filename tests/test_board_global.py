@@ -1,9 +1,9 @@
 """Tests for global acceptance criteria (Issue #48, oracle tier UNIT / T2).
 
 Covered:
-  [T2]   LLM opponent calls Azure OpenAI via /chat/completions with
+  [T2]   LLM opponent calls Ollama via /chat/completions with
           json_schema strict output.
-  [UNIT] Azure credentials in .env; .env.example is committed.
+  [UNIT] Ollama credentials in .env; .env.example is committed.
   [UNIT] LLM output is an index into legal_actions — always legal.
   [UNIT] render_action_prompt() is the single source of truth for the prompt.
 """
@@ -18,7 +18,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from src.agents.action_prompt import render_action_prompt
-from src.agents.azure_openai import call_azure_for_action_index
+from src.agents.ollama_client import call_ollama_for_action_index
 from src.utils.constants import NUM_TERRITORIES
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -52,7 +52,7 @@ def _skip() -> dict[str, int]:
     return {"action_type": 5, "param_a": 0, "param_b": 0, "param_c": 0, "param_d": 0}
 
 
-def _make_azure_response(action_index: int) -> MagicMock:
+def _make_ollama_response(action_index: int) -> MagicMock:
     resp = MagicMock()
     resp.raise_for_status = MagicMock()
     resp.json.return_value = {
@@ -61,22 +61,21 @@ def _make_azure_response(action_index: int) -> MagicMock:
     return resp
 
 
-def _call_azure(legal_actions, *, temperature=0.5, top_p=0.9, model="gpt-4.1"):
-    """Call call_azure_for_action_index with env vars stubbed out."""
-    return call_azure_for_action_index(
+def _call_ollama(legal_actions, *, temperature=0.5, top_p=0.9, model="gpt-oss:120b"):
+    """Call call_ollama_for_action_index with env vars stubbed out."""
+    return call_ollama_for_action_index(
         obs=_make_obs(),
         legal_actions=legal_actions,
         model=model,
-        base_url="https://fake.openai.azure.com/openai/deployments/gpt-4.1",
-        api_key="fake-key",
-        api_version="2024-12-01-preview",
+        base_url="http://localhost:11434/v1",
+        api_key="ollama",
         temperature=temperature,
         top_p=top_p,
     )
 
 
 # ---------------------------------------------------------------------------
-# .env.example committed with all three required keys
+# .env.example committed with required keys
 # ---------------------------------------------------------------------------
 
 
@@ -86,19 +85,14 @@ def test_when_env_example_checked_then_file_exists_at_project_root():
     )
 
 
-def test_when_env_example_read_then_azure_openai_base_url_key_is_present():
+def test_when_env_example_read_then_ollama_base_url_key_is_present():
     content = (PROJECT_ROOT / ".env.example").read_text()
-    assert "AZURE_OPENAI_BASE_URL" in content
+    assert "OLLAMA_BASE_URL" in content
 
 
-def test_when_env_example_read_then_azure_openai_api_key_is_present():
+def test_when_env_example_read_then_ollama_api_key_is_present():
     content = (PROJECT_ROOT / ".env.example").read_text()
-    assert "AZURE_OPENAI_API_KEY" in content
-
-
-def test_when_env_example_read_then_azure_openai_api_version_is_present():
-    content = (PROJECT_ROOT / ".env.example").read_text()
-    assert "AZURE_OPENAI_API_VERSION" in content
+    assert "OLLAMA_API_KEY" in content
 
 
 # ---------------------------------------------------------------------------
@@ -153,81 +147,81 @@ def test_when_render_action_prompt_called_with_any_n_actions_then_no_error_is_ra
 
 
 # ---------------------------------------------------------------------------
-# Azure OpenAI /chat/completions with json_schema strict
+# Ollama /chat/completions with json_schema strict
 # ---------------------------------------------------------------------------
 
 
-def test_when_azure_called_then_url_contains_chat_completions():
-    """Criterion: LLM opponent calls Azure OpenAI via /chat/completions."""
+def test_when_ollama_called_then_url_contains_chat_completions():
+    """Criterion: LLM opponent calls Ollama via /chat/completions."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
         captured["url"] = url
-        return _make_azure_response(0)
+        return _make_ollama_response(0)
 
     with patch("httpx.post", side_effect=_fake_post):
-        _call_azure([_skip()])
+        _call_ollama([_skip()])
 
     assert "/chat/completions" in captured.get("url", ""), (
         "Request URL must include /chat/completions"
     )
 
 
-def test_when_azure_called_then_response_format_type_is_json_schema():
+def test_when_ollama_called_then_response_format_type_is_json_schema():
     """Criterion: request uses json_schema response_format."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
         captured["body"] = kwargs.get("json", {})
-        return _make_azure_response(0)
+        return _make_ollama_response(0)
 
     with patch("httpx.post", side_effect=_fake_post):
-        _call_azure([_skip()])
+        _call_ollama([_skip()])
 
     body = captured.get("body", {})
     assert "response_format" in body
     assert body["response_format"].get("type") == "json_schema"
 
 
-def test_when_azure_called_then_json_schema_strict_is_true():
+def test_when_ollama_called_then_json_schema_strict_is_true():
     """Criterion: json_schema strict output enforced."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
         captured["body"] = kwargs.get("json", {})
-        return _make_azure_response(0)
+        return _make_ollama_response(0)
 
     with patch("httpx.post", side_effect=_fake_post):
-        _call_azure([_skip()])
+        _call_ollama([_skip()])
 
     schema_block = captured["body"].get("response_format", {}).get("json_schema", {})
     assert schema_block.get("strict") is True
 
 
-def test_when_azure_called_then_temperature_is_in_request_body():
-    """Criterion: per-call temperature injected into the Azure request body."""
+def test_when_ollama_called_then_temperature_is_in_request_body():
+    """Criterion: per-call temperature injected into the Ollama request body."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
         captured["body"] = kwargs.get("json", {})
-        return _make_azure_response(0)
+        return _make_ollama_response(0)
 
     with patch("httpx.post", side_effect=_fake_post):
-        _call_azure([_skip()], temperature=0.3)
+        _call_ollama([_skip()], temperature=0.3)
 
     assert captured["body"].get("temperature") == pytest.approx(0.3)
 
 
-def test_when_azure_called_then_top_p_is_in_request_body():
-    """Criterion: per-call top_p injected into the Azure request body."""
+def test_when_ollama_called_then_top_p_is_in_request_body():
+    """Criterion: per-call top_p injected into the Ollama request body."""
     captured: dict = {}
 
     def _fake_post(url, **kwargs):
         captured["body"] = kwargs.get("json", {})
-        return _make_azure_response(0)
+        return _make_ollama_response(0)
 
     with patch("httpx.post", side_effect=_fake_post):
-        _call_azure([_skip()], top_p=0.95)
+        _call_ollama([_skip()], top_p=0.95)
 
     assert captured["body"].get("top_p") == pytest.approx(0.95)
 
@@ -237,17 +231,17 @@ def test_when_azure_called_then_top_p_is_in_request_body():
 # ---------------------------------------------------------------------------
 
 
-def test_when_azure_returns_action_index_then_returned_value_is_int():
-    with patch("httpx.post", return_value=_make_azure_response(0)):
-        result = _call_azure([_skip(), _reinforce(0, 1)])
+def test_when_ollama_returns_action_index_then_returned_value_is_int():
+    with patch("httpx.post", return_value=_make_ollama_response(0)):
+        result = _call_ollama([_skip(), _reinforce(0, 1)])
     assert isinstance(result, int)
 
 
-def test_when_azure_returns_action_index_then_returned_value_is_within_legal_bounds():
+def test_when_ollama_returns_action_index_then_returned_value_is_within_legal_bounds():
     """Criterion: the chosen action is always legal by construction."""
     legal_actions = [_skip(), _reinforce(0, 1), _reinforce(1, 2)]
-    with patch("httpx.post", return_value=_make_azure_response(2)):
-        index = _call_azure(legal_actions)
+    with patch("httpx.post", return_value=_make_ollama_response(2)):
+        index = _call_ollama(legal_actions)
     assert 0 <= index < len(legal_actions)
 
 
@@ -256,9 +250,9 @@ def test_when_azure_returns_action_index_then_returned_value_is_within_legal_bou
     n_actions=st.integers(min_value=10, max_value=20),
 )
 @settings(max_examples=30)
-def test_when_azure_returns_any_valid_index_then_it_is_always_in_range(chosen, n_actions):
+def test_when_ollama_returns_any_valid_index_then_it_is_always_in_range(chosen, n_actions):
     """Property: any valid index the LLM returns must be in [0, len(legal_actions))."""
     legal_actions = [_skip()] * n_actions
-    with patch("httpx.post", return_value=_make_azure_response(chosen)):
-        index = _call_azure(legal_actions)
+    with patch("httpx.post", return_value=_make_ollama_response(chosen)):
+        index = _call_ollama(legal_actions)
     assert 0 <= index < len(legal_actions)

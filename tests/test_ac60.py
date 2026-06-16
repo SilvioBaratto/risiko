@@ -1,8 +1,8 @@
-"""Source-blind acceptance-criteria tests for issue #60 — corrected to match real APIs.
+"""Source-blind acceptance-criteria tests for issue #60 — migrated to Ollama contract.
 
 Criteria covered (oracle-verified as UNIT or T2):
   [T2]   LLM calls /chat/completions with json_schema strict output
-  [UNIT] Azure credentials in .env; .env.example committed
+  [UNIT] Ollama credentials in .env; .env.example committed
   [UNIT] LLM output is an index into legal_actions
   [UNIT] render_action_prompt() is single source of truth; no hardcoded API key
   [UNIT] Attack requires >= 2 armies in source; ADJACENCY is symmetric / 42 territories
@@ -30,10 +30,9 @@ PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 _N = 42  # territory count
 _N_PLAYERS = 2
 
-_AZURE_ENV = {
-    "AZURE_OPENAI_BASE_URL": "https://fake.openai.azure.com/openai/deployments/gpt-4.1",
-    "AZURE_OPENAI_API_KEY": "fake-api-key-abc123",
-    "AZURE_OPENAI_API_VERSION": "2024-02-01",
+_OLLAMA_ENV = {
+    "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+    "OLLAMA_API_KEY": "ollama",
 }
 
 
@@ -73,13 +72,13 @@ def _fake_httpx_response(action_index: int = 0) -> MagicMock:
 
 
 # ===========================================================================
-# Criterion: Azure credentials load from a git-ignored .env;
+# Criterion: Ollama credentials load from a git-ignored .env;
 #            .env.example is committed
 # ===========================================================================
 
 
-class TestAzureCredentialFiles:
-    """Azure credential file-presence tests."""
+class TestOllamaCredentialFiles:
+    """Ollama credential file-presence tests."""
 
     @pytest.fixture(scope="class")
     def env_example_text(self) -> str:
@@ -87,20 +86,15 @@ class TestAzureCredentialFiles:
         assert path.exists(), ".env.example must exist at project root"
         return path.read_text()
 
-    def test_when_env_example_checked_then_azure_base_url_key_is_present(
+    def test_when_env_example_checked_then_ollama_base_url_key_is_present(
         self, env_example_text: str
     ) -> None:
-        assert "AZURE_OPENAI_BASE_URL" in env_example_text
+        assert "OLLAMA_BASE_URL" in env_example_text
 
-    def test_when_env_example_checked_then_azure_api_key_is_present(
+    def test_when_env_example_checked_then_ollama_api_key_is_present(
         self, env_example_text: str
     ) -> None:
-        assert "AZURE_OPENAI_API_KEY" in env_example_text
-
-    def test_when_env_example_checked_then_azure_api_version_is_present(
-        self, env_example_text: str
-    ) -> None:
-        assert "AZURE_OPENAI_API_VERSION" in env_example_text
+        assert "OLLAMA_API_KEY" in env_example_text
 
     def test_when_gitignore_checked_then_dot_env_is_excluded(self) -> None:
         gitignore = PROJECT_ROOT / ".gitignore"
@@ -122,12 +116,12 @@ class TestAzureCredentialFiles:
 
 
 def _patch_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for k, v in _AZURE_ENV.items():
+    for k, v in _OLLAMA_ENV.items():
         monkeypatch.setenv(k, v)
 
 
-class TestAzureApiContractStrict:
-    """Azure API request-structure tests.
+class TestOllamaApiContractStrict:
+    """Ollama API request-structure tests.
 
     Intercepts httpx.post and asserts on the request URL and body.
     """
@@ -135,14 +129,14 @@ class TestAzureApiContractStrict:
     def test_when_action_requested_then_url_contains_chat_completions(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         captured: dict[str, Any] = {}
         _patch_env(monkeypatch)
 
         with patch("httpx.post", side_effect=lambda url, **kw: _capture_and_respond(url, captured)):
-            call_azure_for_action_index(
-                _make_obs(), _make_legal_actions(), model="gpt-4.1", temperature=0.5
+            call_ollama_for_action_index(
+                _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
         assert "/chat/completions" in captured.get("url", ""), (
@@ -152,7 +146,7 @@ class TestAzureApiContractStrict:
     def test_when_action_requested_then_response_format_type_is_json_schema(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         captured: dict[str, Any] = {}
         _patch_env(monkeypatch)
@@ -161,8 +155,8 @@ class TestAzureApiContractStrict:
             "httpx.post",
             side_effect=lambda url, **kw: _capture_body_and_respond(kw, captured),
         ):
-            call_azure_for_action_index(
-                _make_obs(), _make_legal_actions(), model="gpt-4.1", temperature=0.5
+            call_ollama_for_action_index(
+                _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
         rf = captured.get("body", {}).get("response_format", {})
@@ -173,7 +167,7 @@ class TestAzureApiContractStrict:
     def test_when_action_requested_then_json_schema_strict_is_true(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         captured: dict[str, Any] = {}
         _patch_env(monkeypatch)
@@ -182,8 +176,8 @@ class TestAzureApiContractStrict:
             "httpx.post",
             side_effect=lambda url, **kw: _capture_body_and_respond(kw, captured),
         ):
-            call_azure_for_action_index(
-                _make_obs(), _make_legal_actions(), model="gpt-4.1", temperature=0.5
+            call_ollama_for_action_index(
+                _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
         rf = captured.get("body", {}).get("response_format", {})
@@ -192,10 +186,10 @@ class TestAzureApiContractStrict:
             f"response_format.json_schema.strict must be True; got {schema_block!r}"
         )
 
-    def test_when_action_requested_then_api_key_header_is_present(
+    def test_when_action_requested_then_authorization_bearer_header_is_present(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         captured: dict[str, Any] = {}
         _patch_env(monkeypatch)
@@ -204,19 +198,22 @@ class TestAzureApiContractStrict:
             "httpx.post",
             side_effect=lambda url, **kw: _capture_headers_and_respond(kw, captured),
         ):
-            call_azure_for_action_index(
-                _make_obs(), _make_legal_actions(), model="gpt-4.1", temperature=0.5
+            call_ollama_for_action_index(
+                _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
         headers_lower = {k.lower(): v for k, v in captured.get("headers", {}).items()}
-        assert "api-key" in headers_lower, (
-            f"Request must include 'api-key' header; got {list(headers_lower)}"
+        assert "authorization" in headers_lower, (
+            f"Request must include 'Authorization' header; got {list(headers_lower)}"
+        )
+        assert headers_lower["authorization"].startswith("Bearer "), (
+            f"Authorization header must use Bearer scheme; got {headers_lower['authorization']!r}"
         )
 
     def test_when_action_requested_then_temperature_is_injected_in_body(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         captured: dict[str, Any] = {}
         _patch_env(monkeypatch)
@@ -225,8 +222,8 @@ class TestAzureApiContractStrict:
             "httpx.post",
             side_effect=lambda url, **kw: _capture_body_and_respond(kw, captured),
         ):
-            call_azure_for_action_index(
-                _make_obs(), _make_legal_actions(), model="gpt-4.1", temperature=0.3
+            call_ollama_for_action_index(
+                _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.3
             )
 
         assert captured.get("body", {}).get("temperature") == pytest.approx(0.3), (
@@ -236,7 +233,7 @@ class TestAzureApiContractStrict:
     def test_when_action_requested_then_top_p_is_injected_in_body(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         captured: dict[str, Any] = {}
         _patch_env(monkeypatch)
@@ -245,8 +242,12 @@ class TestAzureApiContractStrict:
             "httpx.post",
             side_effect=lambda url, **kw: _capture_body_and_respond(kw, captured),
         ):
-            call_azure_for_action_index(
-                _make_obs(), _make_legal_actions(), model="gpt-4.1", temperature=0.5, top_p=0.85
+            call_ollama_for_action_index(
+                _make_obs(),
+                _make_legal_actions(),
+                model="gpt-oss:120b",
+                temperature=0.5,
+                top_p=0.85,
             )
 
         assert captured.get("body", {}).get("top_p") == pytest.approx(0.85), (
@@ -280,14 +281,14 @@ class TestLlmOutputIsLegalIndex:
     def test_when_model_returns_index_0_then_function_returns_0(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         legal = _make_legal_actions()
         _patch_env(monkeypatch)
 
         with patch("httpx.post", return_value=_fake_httpx_response(0)):
-            result = call_azure_for_action_index(
-                _make_obs(), legal, model="gpt-4.1", temperature=0.5
+            result = call_ollama_for_action_index(
+                _make_obs(), legal, model="gpt-oss:120b", temperature=0.5
             )
 
         assert result == 0
@@ -295,15 +296,15 @@ class TestLlmOutputIsLegalIndex:
     def test_when_model_returns_last_valid_index_then_function_returns_that_index(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         legal = _make_legal_actions()
         last = len(legal) - 1
         _patch_env(monkeypatch)
 
         with patch("httpx.post", return_value=_fake_httpx_response(last)):
-            result = call_azure_for_action_index(
-                _make_obs(), legal, model="gpt-4.1", temperature=0.5
+            result = call_ollama_for_action_index(
+                _make_obs(), legal, model="gpt-oss:120b", temperature=0.5
             )
 
         assert result == last
@@ -311,14 +312,14 @@ class TestLlmOutputIsLegalIndex:
     def test_when_model_returns_index_then_index_is_within_bounds(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         legal = _make_legal_actions()
         _patch_env(monkeypatch)
 
         with patch("httpx.post", return_value=_fake_httpx_response(1)):
-            result = call_azure_for_action_index(
-                _make_obs(), legal, model="gpt-4.1", temperature=0.5
+            result = call_ollama_for_action_index(
+                _make_obs(), legal, model="gpt-oss:120b", temperature=0.5
             )
 
         assert result is not None
@@ -330,7 +331,7 @@ class TestLlmOutputIsLegalIndex:
         self, idx: int
     ) -> None:
         """Property: for any valid index, the function returns exactly that integer."""
-        from src.agents.azure_openai import call_azure_for_action_index
+        from src.agents.ollama_client import call_ollama_for_action_index
 
         legal = [
             {"action_type": 2, "param_a": i, "param_b": 0, "param_c": 1, "param_d": 0}
@@ -338,11 +339,11 @@ class TestLlmOutputIsLegalIndex:
         ]
 
         with (
-            patch.dict(os.environ, _AZURE_ENV),
+            patch.dict(os.environ, _OLLAMA_ENV),
             patch("httpx.post", return_value=_fake_httpx_response(idx)),
         ):
-            result = call_azure_for_action_index(
-                _make_obs(), legal, model="gpt-4.1", temperature=0.5
+            result = call_ollama_for_action_index(
+                _make_obs(), legal, model="gpt-oss:120b", temperature=0.5
             )
 
         assert result == idx
@@ -385,32 +386,32 @@ class TestRenderActionPrompt:
         result = render_action_prompt(_make_obs(), _make_legal_actions(), strategy_hint=hint)
         assert hint in result, "strategy_hint must appear verbatim in the rendered prompt"
 
-    def test_when_azure_client_called_then_render_action_prompt_is_invoked(
+    def test_when_ollama_client_called_then_render_action_prompt_is_invoked(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """render_action_prompt must be the single source of truth for prompt construction."""
-        from src.agents import azure_openai
+        from src.agents import ollama_client
 
         call_count: list[int] = [0]
-        real_render = azure_openai.render_action_prompt
+        real_render = ollama_client.render_action_prompt
 
         def spy_render(*args: Any, **kwargs: Any) -> str:
             call_count[0] += 1
             return real_render(*args, **kwargs)
 
-        monkeypatch.setattr(azure_openai, "render_action_prompt", spy_render)
+        monkeypatch.setattr(ollama_client, "render_action_prompt", spy_render)
         _patch_env(monkeypatch)
 
         with patch("httpx.post", return_value=_fake_httpx_response(0)):
-            azure_openai.call_azure_for_action_index(
-                _make_obs(), _make_legal_actions(), model="gpt-4.1", temperature=0.5
+            ollama_client.call_ollama_for_action_index(
+                _make_obs(), _make_legal_actions(), model="gpt-oss:120b", temperature=0.5
             )
 
         assert call_count[0] >= 1, (
             "render_action_prompt must be called at least once per LLM request"
         )
 
-    def test_when_source_files_scanned_then_no_azure_key_is_hardcoded(self) -> None:
+    def test_when_source_files_scanned_then_no_api_key_is_hardcoded(self) -> None:
         """The API key must never appear as a literal in source files."""
         src_dir = PROJECT_ROOT / "src"
         hex32 = re.compile(r'["\'][0-9a-fA-F]{32}["\']')

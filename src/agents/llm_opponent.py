@@ -1,4 +1,4 @@
-"""LLM-based opponent backed by Azure OpenAI, with timeout and random fallback."""
+"""LLM-based opponent backed by Ollama (local or cloud), with timeout and random fallback."""
 
 from __future__ import annotations
 
@@ -10,19 +10,19 @@ import httpx
 import numpy as np
 import torch
 
-from src.agents.azure_openai import call_azure_for_action_index
 from src.agents.base import Agent
+from src.agents.ollama_client import call_ollama_for_action_index
 from src.agents.player_config import PlayerConfig
 from src.agents.random_agent import RandomAgent
 from src.utils.log import get_logger
 
 logger = get_logger("llm_opponent")
 
-DEFAULT_MODEL = "gpt-4.1"
+DEFAULT_MODEL = "gpt-oss:120b"
 
 
 class LLMOpponent(Agent):
-    """Agent that queries Azure OpenAI for an action, with timeout and fallback."""
+    """Agent that queries Ollama for an action, with timeout and fallback."""
 
     def __init__(
         self,
@@ -34,20 +34,19 @@ class LLMOpponent(Agent):
         strategy_hint: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
-        api_version: str | None = None,
         player_config: PlayerConfig | None = None,
     ) -> None:
-        """Create an LLM opponent backed by Azure OpenAI.
+        """Create an LLM opponent backed by Ollama.
 
         Args:
-            model: Deployment/model name (overridden by ``player_config.model``).
+            model: Model/tag name (overridden by ``player_config.model``), e.g.
+                ``gpt-oss:20b`` (local) or ``gpt-oss:120b`` (cloud).
             timeout: Hard timeout per LLM call in seconds.
             temperature: Sampling temperature (overridden by ``player_config``).
             top_p: Nucleus sampling parameter (overridden by ``player_config``).
             strategy_hint: Prompt directive (overridden by ``player_config``).
-            base_url: Optional override for ``AZURE_OPENAI_BASE_URL``.
-            api_key: Optional override for ``AZURE_OPENAI_API_KEY``.
-            api_version: Optional override for ``AZURE_OPENAI_API_VERSION``.
+            base_url: Optional override for ``OLLAMA_BASE_URL``.
+            api_key: Optional override for ``OLLAMA_API_KEY``.
             player_config: Per-player sampling profile; takes precedence over scalars.
         """
         self._player_config = player_config
@@ -58,7 +57,6 @@ class LLMOpponent(Agent):
         self._strategy_hint = player_config.strategy_hint if player_config else strategy_hint
         self._base_url = base_url
         self._api_key = api_key
-        self._api_version = api_version
         self._fallback = RandomAgent()
 
     def act(
@@ -116,16 +114,15 @@ class LLMOpponent(Agent):
         obs: dict[str, np.ndarray],
         legal_actions: list[dict[str, int]],
     ) -> int | None:
-        """Call Azure OpenAI with a hard timeout via ThreadPoolExecutor."""
+        """Call Ollama with a hard timeout via ThreadPoolExecutor."""
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
-                call_azure_for_action_index,
+                call_ollama_for_action_index,
                 obs,
                 legal_actions,
                 model=self._model,
                 base_url=self._base_url,
                 api_key=self._api_key,
-                api_version=self._api_version,
                 timeout=self._timeout,
                 temperature=self._temperature,
                 top_p=self._top_p,

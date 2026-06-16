@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-DEFAULT_MODEL = "gpt-4.1"
+DEFAULT_MODEL = "gpt-oss:120b"
 
 
 @dataclass(frozen=True)
