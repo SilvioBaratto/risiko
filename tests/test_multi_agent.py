@@ -266,7 +266,7 @@ class TestMultiAgentRunnerRunGame:
 
     def test_game_completes_without_crash(self, two_player_agents: list[Agent]) -> None:
         env = RisikoEnv(n_players=2)
-        runner = MultiAgentRunner(env, two_player_agents)
+        runner = MultiAgentRunner(env, two_player_agents, max_turns=30)
         result = runner.run_game(seed=42)
         # Random agents may not eliminate each other within max_turns
         assert result.winner is None or isinstance(result.winner, int)
@@ -274,7 +274,7 @@ class TestMultiAgentRunnerRunGame:
 
     def test_territory_history_tracks_control(self, two_player_agents: list[Agent]) -> None:
         env = RisikoEnv(n_players=2)
-        runner = MultiAgentRunner(env, two_player_agents)
+        runner = MultiAgentRunner(env, two_player_agents, max_turns=30)
         result = runner.run_game(seed=42)
         # Each territory_history entry should sum to NUM_TERRITORIES
         for counts in result.territory_history:
@@ -283,7 +283,7 @@ class TestMultiAgentRunnerRunGame:
     def test_elimination_order_is_list(self, two_player_agents: list[Agent]) -> None:
         env = RisikoEnv(n_players=3)
         agents = [RandomAgent(seed=1), RandomAgent(seed=2), RandomAgent(seed=3)]
-        runner = MultiAgentRunner(env, agents)
+        runner = MultiAgentRunner(env, agents, max_turns=30)
         result = runner.run_game(seed=42)
         assert isinstance(result.elimination_order, list)
         if result.winner is not None:
@@ -291,7 +291,7 @@ class TestMultiAgentRunnerRunGame:
 
     def test_action_log_records_actions(self, two_player_agents: list[Agent]) -> None:
         env = RisikoEnv(n_players=2)
-        runner = MultiAgentRunner(env, two_player_agents)
+        runner = MultiAgentRunner(env, two_player_agents, max_turns=30)
         result = runner.run_game(seed=42)
         assert len(result.action_log) == result.n_turns
         for entry in result.action_log:
@@ -300,7 +300,7 @@ class TestMultiAgentRunnerRunGame:
 
     def test_trajectories_present(self, two_player_agents: list[Agent]) -> None:
         env = RisikoEnv(n_players=2)
-        runner = MultiAgentRunner(env, two_player_agents)
+        runner = MultiAgentRunner(env, two_player_agents, max_turns=30)
         result = runner.run_game(seed=42)
         assert len(result.trajectories) == result.n_turns
         for obs, action, reward in result.trajectories:
@@ -387,7 +387,7 @@ class TestMultiAgentRunnerFallback:
     def test_fallback_on_crash(self) -> None:
         env = RisikoEnv(n_players=2)
         agents = [CrashingAgent(), RandomAgent(seed=1)]
-        runner = MultiAgentRunner(env, agents)
+        runner = MultiAgentRunner(env, agents, max_turns=30)
         # Should not raise; CrashingAgent falls back to random
         result = runner.run_game(seed=42)
         assert result.winner is None or isinstance(result.winner, int)
@@ -395,7 +395,7 @@ class TestMultiAgentRunnerFallback:
     def test_fallback_agent_is_random(self) -> None:
         env = RisikoEnv(n_players=2)
         agents = [CrashingAgent(), RandomAgent(seed=1)]
-        runner = MultiAgentRunner(env, agents)
+        runner = MultiAgentRunner(env, agents, max_turns=30)
         result = runner.run_game(seed=42)
         assert result.n_turns > 0
 
@@ -468,7 +468,7 @@ class TestMultiAgentRunnerRunGames:
     def test_returns_correct_count(self) -> None:
         env = RisikoEnv(n_players=2)
         agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
-        runner = MultiAgentRunner(env, agents)
+        runner = MultiAgentRunner(env, agents, max_turns=30)
         results = runner.run_games(n=3, seed=42)
         assert len(results) == 3
         for r in results:
@@ -477,7 +477,7 @@ class TestMultiAgentRunnerRunGames:
     def test_sequential_seeds(self) -> None:
         env = RisikoEnv(n_players=2)
         agents = [RandomAgent(seed=1), RandomAgent(seed=2)]
-        runner = MultiAgentRunner(env, agents)
+        runner = MultiAgentRunner(env, agents, max_turns=30)
         results = runner.run_games(n=3, seed=100)
         # Each game should get a different seed
         winners = [r.winner for r in results]
