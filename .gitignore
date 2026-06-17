@@ -223,3 +223,4 @@ graphify-out/cost.json
 .playwright-mcp/
 .code-generator/
 graphify-out/
+data/bc/
