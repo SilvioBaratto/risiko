@@ -20,8 +20,9 @@ _log = get_logger("runner")
 # step per attack, capture-move, fortify). ``max_turns`` caps *player-turns*,
 # so this backstops a pathological policy that never ends its turn from
 # looping forever: the game also aborts after ``max_turns * _STEPS_PER_TURN_CAP``
-# env steps. Empirically ~6 steps/turn under random play, so this is generous.
-_STEPS_PER_TURN_CAP = 200
+# env steps. Empirically ~6 steps/turn under random play; LLM bots can stall in
+# an attack cycle, so keep the backstop tight (was 200 → 30k-step games).
+_STEPS_PER_TURN_CAP = 50
 
 
 @dataclass(frozen=True)
@@ -74,12 +75,25 @@ class MultiAgentRunner:
         env: RisikoEnv,
         agents: Sequence[Agent],
         max_turns: int = 1000,
+        stop_on_eliminated: int | None = None,
     ) -> None:
-        """Initialise runner with environment and agent list."""
+        """Initialise runner with environment and agent list.
+
+        Args:
+            env: The Risiko environment the agents play in.
+            agents: One agent per player slot, in player-id order.
+            max_turns: Player-turn cap; the game aborts as a draw past it.
+            stop_on_eliminated: If set, end the game the moment this player is
+                eliminated. For RL training the learner's MDP ends at its own
+                death — continuing to simulate the surviving opponents adds no
+                learner transitions and can loop for thousands of steps when
+                bots stall in an attack cycle that never ends a turn.
+        """
         self._env = env
         self._agents = agents
         self._n_players = env.n_players
         self._max_turns = max_turns
+        self._stop_on_eliminated = stop_on_eliminated
         self._validate_agents()
 
     def run_game(self, seed: int | None = None) -> GameResult:
@@ -112,6 +126,17 @@ class MultiAgentRunner:
                     "game ended early — terminated=%s truncated=%s turns=%d steps=%d",
                     terminated,
                     truncated,
+                    self._env.state.turns_elapsed,
+                    step,
+                )
+                break
+            if (
+                self._stop_on_eliminated is not None
+                and self._env.state.eliminated[self._stop_on_eliminated]
+            ):
+                _log.info(
+                    "game stopped — focus player=%d eliminated, turns=%d steps=%d",
+                    self._stop_on_eliminated,
                     self._env.state.turns_elapsed,
                     step,
                 )

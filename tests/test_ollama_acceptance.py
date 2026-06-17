@@ -75,7 +75,7 @@ def env_data():
 
 
 def test_when_choose_action_called_then_request_uses_enforced_format_schema():
-    """Ollama request body must declare an object `format` schema with thinking enabled."""
+    """Ollama request body must declare an object `format` schema; thinking off by default."""
     with (
         patch.dict(os.environ, _CREDS, clear=False),
         patch("src.agents.ollama_client.ensure_env_loaded"),
@@ -90,7 +90,7 @@ def test_when_choose_action_called_then_request_uses_enforced_format_schema():
     fmt = body.get("format", {})
     assert fmt.get("type") == "object"
     assert fmt.get("properties", {}).get("action_index", {}).get("type") == "integer"
-    assert body.get("think") is True
+    assert body.get("think") is False
 
 
 # ---------------------------------------------------------------------------

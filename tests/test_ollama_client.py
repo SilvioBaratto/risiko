@@ -154,12 +154,14 @@ def test_when_ollama_called_then_format_is_action_index_schema():
     assert "action_index" in fmt.get("required", [])
 
 
-def test_when_ollama_called_then_thinking_is_enabled():
-    """Thinking must stay ON: think=false breaks `format` enforcement (ollama#15260)."""
+def test_when_ollama_called_then_thinking_is_disabled_by_default():
+    """Thinking defaults OFF: a single action-index answer needs no reasoning and
+    thinking adds 10-100x latency; the `format` mask applies to immediate output.
+    """
     _, mock_post = _call(["a", "b"])
 
     body = mock_post.call_args.kwargs.get("json", {})
-    assert body.get("think") is True
+    assert body.get("think") is False
 
 
 # ──────────────────────────────────────────────────────────────────────────────

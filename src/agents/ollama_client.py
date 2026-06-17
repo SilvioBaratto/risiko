@@ -25,11 +25,12 @@ Endpoint: the base URL ends in ``/v1`` (for the model-list probe); the client
 strips it and calls the native ``{root}/api/chat``. Auth uses the standard
 ``Authorization: Bearer <key>`` header.
 
-Note on reasoning models: ``glm`` / ``gpt-oss`` reason before emitting the
-final JSON, which consumes completion tokens, and the ``format`` mask only
-applies after the end-of-thinking token — so thinking is kept ENABLED
-(``think: true``; ollama#15260) and ``num_predict`` (``max_tokens``) is sized
-to leave room for the hidden reasoning, not just the ~10-token answer.
+Note on thinking: the answer is a single legal-action index that needs no
+chain-of-thought, so thinking is DISABLED by default (``think: false``). On
+reasoning models (``glm`` / ``gpt-oss`` / ``qwen3``) this skips the hidden
+reasoning trace entirely and collapses per-call latency from ~10-113s to ~1s;
+non-reasoning models ignore the flag. ``num_predict`` (``max_tokens``) still
+leaves generous headroom in case ``think=True`` is passed explicitly.
 """
 
 from __future__ import annotations
@@ -68,6 +69,19 @@ _ACTION_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+# System message enforcing JSON-only output. The native `format` mask already
+# constrains decoding, but some models (e.g. gemma4) intermittently ignore it
+# and free-reason in prose with no JSON — unparseable, forcing a random
+# fallback. This steers them to emit only the object so the answer is always
+# recoverable. Sent as a `system`-role message (portable across local & cloud;
+# no Modelfile needed).
+_SYSTEM_PROMPT = (
+    "You are a Risiko move selector. You are given a numbered list of legal "
+    'actions. Reply with ONLY a JSON object of the form {"action_index": N}, '
+    "where N is the integer index of your chosen action. Do not write any "
+    "prose, explanation, or reasoning — output the JSON object and nothing else."
+)
+
 
 def call_ollama_for_action_index(
     obs: dict[str, np.ndarray],
@@ -81,6 +95,7 @@ def call_ollama_for_action_index(
     top_p: float | None = None,
     strategy_hint: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    think: bool = False,
 ) -> int | None:
     """Call Ollama and return an index into *legal_actions*, or None.
 
@@ -101,6 +116,10 @@ def call_ollama_for_action_index(
         top_p: Optional nucleus-sampling parameter.
         strategy_hint: Optional directive injected into the prompt.
         max_tokens: Completion-token ceiling (sized for reasoning headroom).
+        think: Enable model chain-of-thought. Default False — the answer is a
+            single legal-action index needing no reasoning, and disabling it
+            cuts reasoning-model latency ~10-100x. Set True only if a model's
+            index quality measurably improves with reasoning.
 
     Returns:
         An index in ``[0, len(legal_actions))`` chosen by the model, or ``None``
@@ -115,15 +134,20 @@ def call_ollama_for_action_index(
     prompt = render_action_prompt(obs, legal_actions, strategy_hint)
     body: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
         "format": _ACTION_SCHEMA,  # enforced via XGrammar on the native endpoint
         "stream": False,
-        # Keep thinking ENABLED. For reasoning models (glm, gpt-oss) Ollama
-        # defers the `format` probability mask until the end-of-thinking token;
-        # think=false closes the thinking tags without that token, so the mask
-        # never applies and the schema is ignored (ollama#15260). With thinking
-        # on, the model reasons, then constrained decoding forces the JSON.
-        "think": True,
+        # Thinking OFF — universal across models. For reasoning models (glm,
+        # gpt-oss, qwen3) this skips the chain-of-thought entirely (the answer
+        # is a single index, no reasoning needed) and collapses latency from
+        # 10-113s to ~1s; for non-reasoning models (gemma, mistral) Ollama
+        # silently ignores it. Absence of `think` defaults to True, so it MUST
+        # be sent explicitly (ollama docs: capabilities/thinking). The native
+        # `format` mask still applies on the immediate (non-thinking) output.
+        "think": think,
         "options": {
             "temperature": temperature,
             "num_predict": max_tokens,
@@ -182,7 +206,10 @@ def list_ollama_models(
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
-_INDEX_RE = re.compile(r'"?action_index"?\s*[:=]\s*(-?\d+)')
+# Case-insensitive + separator-tolerant: models that ignore the enforced schema
+# emit key variants — capital ({"Action_index": 18}), hyphen ({"action-index":
+# 5}), or a space. Match them all; the underscore is the canonical form.
+_INDEX_RE = re.compile(r'"?action[-_ ]?index"?\s*[:=]\s*(-?\d+)', re.IGNORECASE)
 
 
 def _extract_action_index(content: str) -> int | None:
@@ -206,11 +233,17 @@ def _extract_action_index(content: str) -> int | None:
         # Bare integer (cloud schema-flattening): "0" -> 0. Exclude bool.
         if isinstance(parsed, int) and not isinstance(parsed, bool):
             return parsed
-        if isinstance(parsed, dict) and "action_index" in parsed:
-            try:
-                return int(parsed["action_index"])
-            except (ValueError, TypeError):
-                continue
+        if isinstance(parsed, dict):
+            # Case- and separator-insensitive key: models emit "Action_index",
+            # "action-index", "action index" — normalise to the canonical form.
+            for k, v in parsed.items():
+                if isinstance(k, str) and k.lower().replace("-", "_").replace(" ", "_") == (
+                    "action_index"
+                ):
+                    try:
+                        return int(v)
+                    except (ValueError, TypeError):
+                        break
     match = _INDEX_RE.search(content)
     return int(match.group(1)) if match else None
 
