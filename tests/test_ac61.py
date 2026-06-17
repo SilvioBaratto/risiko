@@ -135,11 +135,36 @@ class TestOllamaApiContract:
         fmt = body.get("format", {})
         assert fmt.get("type") == "object", f"format.type must be 'object'; got {fmt!r}"
 
-    def test_when_action_requested_then_thinking_is_enabled(self, monkeypatch) -> None:
-        """Request body must enable thinking so the `format` mask is applied."""
+    def test_when_action_requested_then_thinking_is_disabled_by_default(self, monkeypatch) -> None:
+        """Thinking is OFF by default: the answer is a single legal-action index
+        needing no chain-of-thought, and reasoning models otherwise spend
+        10-100x the latency emitting a discarded thinking trace. ``think`` must
+        be sent explicitly (absence defaults to True server-side).
+        """
         captured = self._call_with_capture(monkeypatch)
         body = captured["kwargs"].get("json", {})
-        assert body.get("think") is True, f"think must be True; got {body.get('think')!r}"
+        assert body.get("think") is False, f"think must be False; got {body.get('think')!r}"
+
+    def test_when_think_true_passed_then_forwarded(self, monkeypatch) -> None:
+        """``think=True`` is forwarded for models that benefit from reasoning."""
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OLLAMA_API_KEY", "ollama")
+        captured: dict = {}
+
+        def fake_post(url, **kwargs):
+            captured["kwargs"] = kwargs
+            return _fake_httpx_response(0)
+
+        from src.agents.ollama_client import call_ollama_for_action_index
+
+        with (
+            patch("httpx.post", side_effect=fake_post),
+            patch("src.agents.ollama_client.render_action_prompt", return_value="test prompt"),
+        ):
+            call_ollama_for_action_index(
+                _minimal_obs(), _minimal_legal(), model="gpt-oss:120b", think=True
+            )
+        assert captured["kwargs"]["json"].get("think") is True
 
     def test_when_action_requested_then_schema_constrains_action_index_property(
         self, monkeypatch

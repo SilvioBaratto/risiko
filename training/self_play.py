@@ -271,7 +271,12 @@ class SelfPlayTrainer:
     def _run_episode(self, buffer: RolloutBuffer) -> GameResult:
         """Play one episode and append learner transitions to *buffer*."""
         agents = self._build_agents()
-        runner = MultiAgentRunner(self._env, agents, max_turns=self._max_turns)
+        runner = MultiAgentRunner(
+            self._env,
+            agents,
+            max_turns=self._max_turns,
+            stop_on_eliminated=_LEARNER_ID,
+        )
         result = runner.run_game(seed=self._cfg.seed + self._episode)
         self._buffer_learner_transitions(result, buffer)
         return result
@@ -345,12 +350,15 @@ class SelfPlayTrainer:
         """Outcome reward added to the learner's final transition.
 
         - learner won  → 0.0 (``sparse_win`` already on the winning move)
-        - draw (cap hit, ``winner is None``) → graded territory margin
-        - learner lost → ``sparse_loss``
+        - learner eliminated → ``sparse_loss`` (game may stop here before a
+          single winner emerges, so check elimination before the draw branch)
+        - draw (cap hit, learner still alive, no winner) → graded territory margin
         """
         cfg = self._env.reward_config
         if result.winner == _LEARNER_ID:
             return 0.0
+        if _LEARNER_ID in result.elimination_order:
+            return cfg.sparse_loss
         if result.winner is None:
             return cfg.terminal_margin_weight * self._env.territory_margin(_LEARNER_ID)
         return cfg.sparse_loss

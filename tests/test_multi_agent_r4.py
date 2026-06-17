@@ -586,8 +586,11 @@ def test_when_ollama_client_is_called_then_format_type_is_object():
     assert fmt.get("type") == "object", f"format.type must be 'object', got: {fmt.get('type')!r}"
 
 
-def test_when_ollama_client_is_called_then_thinking_is_enabled():
-    """Think must be True: think=false breaks `format` enforcement (ollama#15260)."""
+def test_when_ollama_client_is_called_then_thinking_is_disabled_by_default():
+    """Think defaults to False: a single action-index answer needs no reasoning,
+    and thinking adds 10-100x latency on reasoning models. The native `format`
+    mask still applies to the immediate (non-thinking) output.
+    """
     from src.agents.ollama_client import call_ollama_for_action_index
 
     legal = [_SKIP_ACTION]
@@ -598,7 +601,7 @@ def test_when_ollama_client_is_called_then_thinking_is_enabled():
         call_ollama_for_action_index(_obs(), legal, model="gpt-oss:120b")
 
     body = mock_post.call_args.kwargs.get("json") or {}
-    assert body.get("think") is True, "thinking must stay enabled for format masking"
+    assert body.get("think") is False, "thinking must default off to avoid latency"
 
 
 def test_when_ollama_client_is_called_then_schema_enforces_action_index_field():

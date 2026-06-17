@@ -138,11 +138,13 @@ class TestOllamaChatCompletionsEndpoint:
         fmt = body.get("format", {})
         assert fmt.get("type") == "object", f"format.type must be 'object', got: {fmt}"
 
-    def test_when_ollama_called_then_thinking_is_enabled(self):
-        """Criterion: thinking must be enabled so the `format` mask is actually applied."""
+    def test_when_ollama_called_then_thinking_is_disabled_by_default(self):
+        """Criterion: thinking defaults OFF (single-index answer needs no reasoning;
+        avoids 10-100x reasoning-model latency). Mask applies to immediate output.
+        """
         _, calls = _call_ollama([_skip_action()])
         body = calls[0]["kwargs"]["json"]
-        assert body.get("think") is True, f"think must be True, got: {body.get('think')}"
+        assert body.get("think") is False, f"think must be False, got: {body.get('think')}"
 
     def test_when_ollama_called_then_request_body_contains_action_index_schema(self):
         """The `format` schema must constrain the output to contain 'action_index'."""
