@@ -20,6 +20,7 @@ __all__ = [
     "PPOConfig",
     "NetworkConfig",
     "SelfPlayConfig",
+    "EarlyStopConfig",
     "TrainingConfig",
     "load_config",
     "merge_cli_overrides",
@@ -67,6 +68,29 @@ class SelfPlayConfig:
 
 
 @dataclass(frozen=True)
+class EarlyStopConfig:
+    """Early stopping on a fixed-baseline metric (win-rate vs ``RandomAgent``).
+
+    Research-backed for self-play / sparse-reward training: evaluate against a
+    FIXED reference rather than the (changing, circular) training opponent,
+    smooth the noisy win-rate over a window, and stop after ``patience`` checks
+    with no ``> min_delta`` improvement — keeping the best checkpoint, since
+    over-training self-play agents tends to degrade past the peak.
+
+    Disabled by default; opt in via config. ``eval_games`` use ``RandomAgent``
+    seats only, so a check costs no LLM calls.
+    """
+
+    enabled: bool = False
+    eval_every: int = 50  # episodes between baseline evaluations
+    eval_games: int = 20  # games per baseline evaluation
+    window: int = 5  # moving-average window over evaluations (smooths noise)
+    patience: int = 12  # evaluations without improvement before stopping
+    min_delta: float = 0.01  # smallest smoothed gain that counts as improvement
+    restore_best: bool = True  # reload the best checkpoint when stopping
+
+
+@dataclass(frozen=True)
 class TrainingConfig:
     """Root configuration bundling PPO, network, training, and self-play settings."""
 
@@ -82,6 +106,7 @@ class TrainingConfig:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     reward: RewardConfig = field(default_factory=RewardConfig)
     self_play: SelfPlayConfig = field(default_factory=SelfPlayConfig)
+    early_stop: EarlyStopConfig = field(default_factory=EarlyStopConfig)
 
 
 def load_config(path: Path) -> TrainingConfig:
