@@ -17,6 +17,8 @@ import yaml
 from src.utils.reward_config import RewardConfig
 
 __all__ = [
+    "BCConfig",
+    "HeuristicConfig",
     "PPOConfig",
     "NetworkConfig",
     "SelfPlayConfig",
@@ -28,6 +30,48 @@ __all__ = [
 ]
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class HeuristicConfig:
+    """Thresholds and weights for the HeuristicAgent scripted policy."""
+
+    reinforce_border_weight: float = 1.0
+    reinforce_continent_weight: float = 0.5
+    reinforce_threat_weight: float = 0.8
+    attack_min_odds: float = 1.5
+    attack_odds_stop: float = 1.0
+    attack_continent_weight: float = 1.5
+    attack_weakest_enemy_weight: float = 0.5
+    attack_dice_policy: str = "max"
+    fortify_threat_weight: float = 1.0
+    fortify_min_interior_armies: int = 2
+    capture_move_fraction: float = 0.5
+    card_target_weakest_weight: float = 1.0
+
+
+@dataclass(frozen=True)
+class BCConfig:
+    """Behaviour-cloning pipeline configuration."""
+
+    n_games: int = 10_000
+    n_players: int = 6
+    max_turns: int = 500
+    seed: int = 42
+    dataset_dir: str = "data/bc"
+    shard_size: int = 10_000
+    demonstrator: str = "heuristic"
+    epochs: int = 10
+    batch_size: int = 512
+    lr: float = 3e-4
+    value_loss_coef: float = 0.5
+    val_split: float = 0.1
+    early_stop_patience: int = 5
+    output_path: str = "models/pretrained.pt"
+    explore_eps: float = 0.1
+    label_smoothing: float = 0.05
+    entropy_coef: float = 0.01
+    heuristic: HeuristicConfig = field(default_factory=HeuristicConfig)
 
 
 @dataclass(frozen=True)
@@ -107,6 +151,7 @@ class TrainingConfig:
     reward: RewardConfig = field(default_factory=RewardConfig)
     self_play: SelfPlayConfig = field(default_factory=SelfPlayConfig)
     early_stop: EarlyStopConfig = field(default_factory=EarlyStopConfig)
+    bc: BCConfig = field(default_factory=BCConfig)
 
 
 def load_config(path: Path) -> TrainingConfig:

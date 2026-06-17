@@ -22,7 +22,9 @@ _REGISTERED = False
 def _config_safe_globals() -> list[Any]:
     """Project config dataclasses stored inside checkpoints."""
     from src.config import (
+        BCConfig,
         EarlyStopConfig,
+        HeuristicConfig,
         NetworkConfig,
         PPOConfig,
         SelfPlayConfig,
@@ -37,6 +39,8 @@ def _config_safe_globals() -> list[Any]:
         SelfPlayConfig,
         EarlyStopConfig,
         RewardConfig,
+        BCConfig,
+        HeuristicConfig,
     ]
 
 

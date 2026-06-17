@@ -297,8 +297,10 @@ class TestModuleExports:
     """Public API surface declared via __all__."""
 
     def test_when_imported_then_all_lists_public_api(self):
-        """__all__ exports the five config dataclasses and three functions."""
+        """__all__ exports all config dataclasses and utility functions."""
         assert set(config_module.__all__) == {
+            "BCConfig",
+            "HeuristicConfig",
             "PPOConfig",
             "NetworkConfig",
             "SelfPlayConfig",
