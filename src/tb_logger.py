@@ -76,6 +76,17 @@ class TensorBoardLogger:
 
         self._writer.flush()
 
+    def log_scalar(self, tag: str, value: float, episode: int) -> None:
+        """Log a single named scalar at *episode* (e.g. early-stop metrics).
+
+        Args:
+            tag: TensorBoard scalar tag, e.g. ``"early_stop/win_rate_vs_random"``.
+            value: Scalar value to record.
+            episode: Current episode number for the x-axis.
+        """
+        self._writer.add_scalar(tag, value, episode)
+        self._writer.flush()
+
     def close(self) -> None:
         """Flush and close the underlying writer."""
         self._writer.close()

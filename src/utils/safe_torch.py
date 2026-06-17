@@ -21,10 +21,23 @@ _REGISTERED = False
 
 def _config_safe_globals() -> list[Any]:
     """Project config dataclasses stored inside checkpoints."""
-    from src.config import NetworkConfig, PPOConfig, SelfPlayConfig, TrainingConfig
+    from src.config import (
+        EarlyStopConfig,
+        NetworkConfig,
+        PPOConfig,
+        SelfPlayConfig,
+        TrainingConfig,
+    )
     from src.utils.reward_config import RewardConfig
 
-    return [TrainingConfig, PPOConfig, NetworkConfig, SelfPlayConfig, RewardConfig]
+    return [
+        TrainingConfig,
+        PPOConfig,
+        NetworkConfig,
+        SelfPlayConfig,
+        EarlyStopConfig,
+        RewardConfig,
+    ]
 
 
 def _numpy_safe_globals() -> list[Any]:

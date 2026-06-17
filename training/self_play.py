@@ -28,6 +28,7 @@ from src.tb_logger import TensorBoardLogger
 from src.utils.constants import ACTION_DIMS
 from src.utils.log import get_logger
 from src.utils.seed import set_global_seeds
+from training.early_stopping import EarlyStopper
 
 _log = get_logger("train")
 
@@ -104,6 +105,7 @@ class SelfPlayTrainer:
         self._logger = TensorBoardLogger(self._log_dir)
         self._episode = 0
         self._best_metric_value = 0.0
+        self._early_stopper = self._build_early_stopper()
         self._buffer: RolloutBuffer | None = None
 
     # ------------------------------------------------------------------
@@ -148,6 +150,7 @@ class SelfPlayTrainer:
                 updated = True
             self._maybe_evaluate_and_promote()
             self._maybe_checkpoint()
+            stop = self._maybe_early_stop()
             self._episode += 1
             pbar.update(1)
             if updated:
@@ -161,9 +164,12 @@ class SelfPlayTrainer:
                     result.n_turns,
                     result.elimination_order,
                 )
+            if stop:
+                break
         pbar.close()
         if len(buffer) > 0 and last_result is not None:
             self._update_and_log(buffer, last_result)
+        self._maybe_restore_best()
         self._logger.close()
         _log.info("training complete — total episodes=%d", self._episode)
 
@@ -437,6 +443,85 @@ class SelfPlayTrainer:
     def _promote_current_to_opponent(self) -> None:
         self._opponent_net.load_state_dict(self._agent._net.state_dict())
         _log.info("opponent promoted at episode=%d", self._episode)
+
+    # ------------------------------------------------------------------
+    # Early stopping (plateau detection on win-rate vs a fixed baseline)
+    # ------------------------------------------------------------------
+
+    def _build_early_stopper(self) -> EarlyStopper | None:
+        es = self._cfg.early_stop
+        if not es.enabled:
+            return None
+        return EarlyStopper(patience=es.patience, min_delta=es.min_delta, window=es.window)
+
+    def _maybe_early_stop(self) -> bool:
+        """Evaluate vs a fixed baseline on schedule; return True to stop.
+
+        Win-rate against the training opponent is circular and (in 6p) ~0 for a
+        long time, so the plateau signal is win-rate against a fixed
+        ``RandomAgent`` reference — a clean, monotone-ish generalisation curve
+        that costs no LLM calls. The best checkpoint is snapshotted so training
+        can restore the peak (self-play agents tend to degrade past it).
+        """
+        es = self._cfg.early_stop
+        if self._early_stopper is None:
+            return False
+        if self._episode == 0 or self._episode % es.eval_every != 0:
+            return False
+        win_rate = self._evaluate_against_random()
+        stop = self._early_stopper.update(win_rate)
+        self._logger.log_scalar("early_stop/win_rate_vs_random", win_rate, self._episode)
+        self._logger.log_scalar(
+            "early_stop/smoothed_best", self._early_stopper.best_value, self._episode
+        )
+        _log.info(
+            "early-stop eval ep=%d | win_rate_vs_random=%.3f smoothed_best=%.3f bad=%d/%d%s",
+            self._episode,
+            win_rate,
+            self._early_stopper.best_value,
+            self._early_stopper.num_bad_evals,
+            es.patience,
+            " — NEW BEST" if self._early_stopper.is_best else "",
+        )
+        if self._early_stopper.is_best:
+            self.save_checkpoint(self._checkpoint_dir / "best.pt")
+        if stop:
+            _log.info(
+                "early stopping at ep=%d — no win-rate gain in %d evals (best=%.3f)",
+                self._episode,
+                es.patience,
+                self._early_stopper.best_value,
+            )
+        return stop
+
+    def _evaluate_against_random(self) -> float:
+        """Win-rate of the learner (player 0) vs an all-``RandomAgent`` board."""
+        from src.agents.random_agent import RandomAgent
+        from training.evaluate import evaluate_agents
+
+        result = evaluate_agents(
+            self._agent,
+            RandomAgent(seed=self._cfg.seed),
+            n_games=self._cfg.early_stop.eval_games,
+            n_players=self._cfg.self_play.n_players,
+            seed=self._cfg.seed + self._episode,
+            max_turns=self._max_turns,
+        )
+        return result.win_rate_a
+
+    def _maybe_restore_best(self) -> None:
+        """Reload the best checkpoint so the final model is the peak, not the last."""
+        es = self._cfg.early_stop
+        if self._early_stopper is None or not es.restore_best:
+            return
+        best_path = self._checkpoint_dir / "best.pt"
+        if best_path.exists():
+            self.load_checkpoint(best_path)
+            _log.info(
+                "restored best checkpoint from %s (best=%.3f)",
+                best_path,
+                self._early_stopper.best_value,
+            )
 
     # ------------------------------------------------------------------
     # Checkpointing
