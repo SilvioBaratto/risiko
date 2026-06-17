@@ -53,6 +53,10 @@ class EarlyStopper:
         self._num_bad: int = 0
         self._is_best: bool = False
 
+    def __call__(self, value: float) -> bool:
+        """Convenience wrapper — ``stopper(metric)`` delegates to :meth:`update`."""
+        return self.update(value)
+
     def update(self, value: float) -> bool:
         """Record an evaluation and report whether training should stop.
 

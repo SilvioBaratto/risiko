@@ -241,8 +241,14 @@ def test_when_shard_loaded_then_all_arrays_have_same_row_count(tmp_path):
     data = np.load(shard)
     n_rows = data["obs"].shape[0]
     for key in (
-        "label_index", "acting_player", "mc_return",
-        "action_type", "param_a", "param_b", "param_c", "param_d",
+        "label_index",
+        "acting_player",
+        "mc_return",
+        "action_type",
+        "param_a",
+        "param_b",
+        "param_c",
+        "param_d",
     ):
         assert data[key].shape[0] == n_rows, (
             f"'{key}' length {data[key].shape[0]} != obs rows {n_rows}"
@@ -475,8 +481,14 @@ def test_pbt_label_arrays_always_aligned_with_obs_rows(n_games):
             data = np.load(f)
             n_rows = data["obs"].shape[0]
             for key in (
-                "label_index", "acting_player", "mc_return",
-                "action_type", "param_a", "param_b", "param_c", "param_d",
+                "label_index",
+                "acting_player",
+                "mc_return",
+                "action_type",
+                "param_a",
+                "param_b",
+                "param_c",
+                "param_d",
             ):
                 assert data[key].shape[0] == n_rows, (
                     f"n_games={n_games} {f.name}: '{key}' length {data[key].shape[0]} != {n_rows}"
@@ -545,9 +557,7 @@ def test_when_shard_loaded_then_param_arrays_are_non_negative_integers(tmp_path)
     for f in tmp_path.glob("shard_*.npz"):
         data = np.load(f)
         for key in ("param_a", "param_b", "param_c", "param_d"):
-            assert np.issubdtype(data[key].dtype, np.integer), (
-                f"'{key}' must have integer dtype"
-            )
+            assert np.issubdtype(data[key].dtype, np.integer), f"'{key}' must have integer dtype"
             assert (data[key] >= 0).all(), f"'{key}' values must be non-negative"
 
 

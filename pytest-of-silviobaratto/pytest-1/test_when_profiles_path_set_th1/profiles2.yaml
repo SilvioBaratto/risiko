@@ -1,0 +1,10 @@
+- model: gpt-oss:120b
+  player_id: 0
+  strategy_hint: greedy
+  temperature: 0.1
+  top_p: 0.9
+- model: gpt-oss:120b
+  player_id: 1
+  strategy_hint: random
+  temperature: 0.9
+  top_p: 0.8

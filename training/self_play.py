@@ -112,6 +112,42 @@ class SelfPlayTrainer:
     # Public API
     # ------------------------------------------------------------------
 
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint_path: str | Path,
+        checkpoint_dir: Path = Path("models"),
+        log_dir: Path | None = None,
+    ) -> SelfPlayTrainer:
+        """Construct a SelfPlayTrainer from a checkpoint file (for warm-starting from BC).
+
+        Args:
+            checkpoint_path: Path to the checkpoint file (typically from BC pretraining).
+            checkpoint_dir: Directory for saving new checkpoints.
+            log_dir: TensorBoard log directory.
+
+        Returns:
+            A SelfPlayTrainer instance with the checkpoint's weights loaded.
+        """
+        payload = torch.load(checkpoint_path, weights_only=False)
+        cfg = payload["config"]
+        trainer = cls(cfg, checkpoint_dir, log_dir)
+        trainer.load_checkpoint(Path(checkpoint_path))
+        return trainer
+
+    def update_step(self) -> dict[str, float]:
+        """Execute a single PPO update step for testing purposes.
+
+        Creates a minimal rollout buffer, collects one episode, and updates the network.
+        Used primarily for integration testing (warm-start BC → one PPO step).
+        """
+        self._buffer = self._make_buffer()
+        result = self._run_episode(self._buffer)
+        if len(self._buffer) > 0:
+            self._update_and_log(self._buffer, result)
+            self._buffer.clear()
+        return {}
+
     def train(self) -> None:
         """Run the self-play training loop."""
         self._buffer = self._make_buffer()
