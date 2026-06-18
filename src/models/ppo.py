@@ -61,7 +61,11 @@ class PPOTrainer:
             "explained_variance": 0.0,
         }
 
+        target_kl = getattr(self.config, "target_kl", 0.0)
+        epochs_run = 0
         for _epoch in range(self.config.n_epochs):
+            epoch_kl_sum = 0.0
+            epoch_batches = 0
             for batch in buffer.get(
                 batch_size=self.config.batch_size,
                 action_dims=self.net.action_dims,
@@ -69,8 +73,23 @@ class PPOTrainer:
                 batch_metrics = self._update_step(batch)
                 for key in metrics:
                     metrics[key] += batch_metrics[key]
+                epoch_kl_sum += batch_metrics["approx_kl"]
+                epoch_batches += 1
+            epochs_run += 1
+            # Target-KL early stop: abandon the remaining epochs once the policy
+            # has already moved too far this update. Prevents the KL blow-up seen
+            # with a sharp (BC-warm-started) policy run for many epochs over one
+            # game's small, correlated rollout.
+            if target_kl and epoch_batches and (epoch_kl_sum / epoch_batches) > 1.5 * target_kl:
+                _log.info(
+                    "target-KL early stop: epoch=%d approx_kl=%.4f > 1.5*target_kl=%.4f",
+                    epochs_run,
+                    epoch_kl_sum / epoch_batches,
+                    1.5 * target_kl,
+                )
+                break
 
-        n_batches = self.config.n_epochs * self._n_batches(buffer)
+        n_batches = epochs_run * self._n_batches(buffer)
         if n_batches > 0:
             for key in metrics:
                 metrics[key] /= n_batches
@@ -89,6 +108,16 @@ class PPOTrainer:
         actions = batch["actions"]
         old_log_probs = batch["log_probs"]
         advantages = batch["advantages"]
+        # Per-mini-batch advantage normalization (standard PPO; SB3 default).
+        # Without it the policy-gradient magnitude scales with the raw advantage
+        # scale (here: terminal-margin + dense rewards + GAE), making a single
+        # epoch move the policy enormously (observed approx_kl ~1). Normalizing
+        # to zero-mean/unit-std keeps each update inside the trust region. Skip
+        # when the batch advantages are (near-)constant: dividing by ~0 std just
+        # amplifies numerical noise into a huge spurious update.
+        adv_std = advantages.std()
+        if getattr(self.config, "normalize_advantage", True) and adv_std > 1e-6:
+            advantages = (advantages - advantages.mean()) / (adv_std + 1e-8)
         returns = batch["returns"]
         # Apply the same per-head masks used at sampling time so new_log_prob
         # is comparable to the stored old_log_prob.
@@ -145,7 +174,11 @@ class PPOTrainer:
         self.optimizer.step()
 
         with torch.no_grad():
-            approx_kl = ((old_log_probs - new_log_probs).abs()).mean().item()
+            # Schulman k3 estimator (SB3/standard PPO): low-variance, ≥0, and
+            # comparable to published target_kl values. ``ratio`` already equals
+            # exp(new - old), so logratio = new - old.
+            logratio = new_log_probs - old_log_probs
+            approx_kl = ((ratio - 1) - logratio).mean().item()
             clip_fraction = ((ratio - 1).abs() > self.config.clip_epsilon).float().mean().item()
             explained_variance = self._explained_variance(returns, new_values.squeeze(-1))
 

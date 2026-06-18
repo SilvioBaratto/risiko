@@ -15,7 +15,11 @@ device: auto
 max_turns: 2000
 
 ppo:
-  lr: 0.0003
+  # lr lowered 3e-4 -> 1e-4 and n_epochs 10 -> 4: the first updates start from a
+  # sharp BC-warm-started policy over one game's small correlated rollout, which
+  # diverged (approx_kl ~3.2) at the old settings. target_kl bails the epoch loop
+  # the moment the policy drifts too far.
+  lr: 0.0001
   gamma: 0.99
   gae_lambda: 0.95
   clip_epsilon: 0.2
@@ -23,7 +27,8 @@ ppo:
   value_loss_coef: 0.5
   max_grad_norm: 0.5
   n_steps: 2048
-  n_epochs: 10
+  n_epochs: 4
+  target_kl: 0.02   # k3-estimator KL; epoch loop bails at 1.5x (=0.03)
   batch_size: 64
 
 network:
