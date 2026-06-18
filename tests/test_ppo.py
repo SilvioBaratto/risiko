@@ -151,9 +151,13 @@ class TestUpdate:
         assert "explained_variance" in metrics
 
     def test_policy_loss_is_negative(self):
-        """Policy loss is negative (we maximize clipped surrogate)."""
+        """Policy loss is negative (we maximize clipped surrogate).
+
+        Uses raw advantages: with per-batch advantage normalization (zero-mean)
+        the surrogate is centered near 0 and its sign is no longer an invariant.
+        """
         net = _make_net()
-        cfg = PPOConfig(n_epochs=1, batch_size=4)
+        cfg = PPOConfig(n_epochs=1, batch_size=4, normalize_advantage=False)
         trainer = PPOTrainer(net, cfg)
         buf = RolloutBuffer(capacity=8, device="cpu")
         _fill_buffer_with_obs(buf, net, 8)

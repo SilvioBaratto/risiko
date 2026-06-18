@@ -88,6 +88,14 @@ class PPOConfig:
     n_steps: int = 2048
     n_epochs: int = 10
     batch_size: int = 64
+    # Stop the epoch loop early once the policy has drifted past this approx-KL
+    # (guards against divergence from many epochs over a small, correlated
+    # buffer — e.g. a BC-warm-started policy). 0.0 disables the guard.
+    target_kl: float = 0.05
+    # Normalize advantages to zero-mean/unit-std per mini-batch (SB3 default).
+    # Essential for stability: raw advantages (terminal-margin + dense + GAE)
+    # otherwise produce unbounded policy-gradient steps (approx_kl ~1).
+    normalize_advantage: bool = True
 
 
 @dataclass(frozen=True)
