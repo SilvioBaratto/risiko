@@ -439,13 +439,13 @@ class TestCaptureMove:
 class TestFortify:
     """Fortification phase mechanics."""
 
-    def test_fortify_non_adjacent_connected_valid(self):
-        """Fortifying over a connected path of own territories is valid."""
-        env = RisikoEnv(n_players=3)
+    def test_fortify_non_adjacent_connected_valid_chain_mode(self):
+        """With fortify_adjacent_only=False, fortifying over a connected chain is valid."""
+        env = RisikoEnv(n_players=3, fortify_adjacent_only=False)
         env.reset(seed=42)
         env.state.phase = PHASE_FORTIFY
         env.state.current_player = 0
-        # Create a connected chain: 0-1-8 all owned by player 0
+        # Chain: 0 (Alaska) adj 1 (Alberta) adj 8 (Western US); 0 not adj 8
         env.state.territory_owner[0] = 0
         env.state.territory_owner[1] = 0
         env.state.territory_owner[8] = 0
@@ -463,6 +463,51 @@ class TestFortify:
         assert obs["phase"] in (PHASE_TRADE, PHASE_REINFORCE)
         assert env.state.armies[0] == 2
         assert env.state.armies[8] == 2
+
+    def test_fortify_non_adjacent_chain_rejected_in_default_mode(self):
+        """Default mode rejects fortify to a non-adjacent territory (chain-only path)."""
+        env = RisikoEnv(n_players=3)
+        env.reset(seed=42)
+        env.state.phase = PHASE_FORTIFY
+        env.state.current_player = 0
+        env.state.territory_owner[0] = 0
+        env.state.territory_owner[1] = 0
+        env.state.territory_owner[8] = 0
+        env.state.armies[0] = 3
+        env.state.armies[1] = 1
+        env.state.armies[8] = 1
+        action = {
+            "action_type": 4,
+            "param_a": 0,
+            "param_b": 8,
+            "param_c": 1,
+            "param_d": 0,
+        }
+        _, reward, _, _, _ = env.step(action)
+        assert reward < 0, "Non-adjacent fortify in default mode must return invalid-action penalty"
+
+    def test_fortify_into_one_army_adjacent_territory_valid(self):
+        """Boundary: destination with only 1 army is a valid fortify target (adjacent)."""
+        # ADJACENCY[0] = [1, 5, 31]; territories 1 has 1 army, 0 has 3
+        env = RisikoEnv(n_players=3)
+        env.reset(seed=42)
+        env.state.phase = PHASE_FORTIFY
+        env.state.current_player = 0
+        env.state.territory_owner[0] = 0
+        env.state.territory_owner[1] = 0
+        env.state.armies[0] = 3
+        env.state.armies[1] = 1  # dest has only 1 army — must still be a legal target
+        action = {
+            "action_type": 4,
+            "param_a": 0,
+            "param_b": 1,
+            "param_c": 1,
+            "param_d": 0,
+        }
+        obs, _, _, _, _ = env.step(action)
+        assert obs["phase"] in (PHASE_TRADE, PHASE_REINFORCE)
+        assert env.state.armies[0] == 2
+        assert env.state.armies[1] == 2
 
     def test_fortify_same_territory_invalid(self):
         """Fortifying from a territory to itself is invalid."""
@@ -624,7 +669,12 @@ class TestElimination:
         assert not env._check_win()
 
     def test_draw_card_after_capture(self):
-        """A successful capture should give a card if under max."""
+        """Card is drawn at end of turn (not per-capture) when territory was taken.
+
+        Official Risk rule: exactly one card per turn if you captured ≥1 territory.
+        The per-capture draw was removed to prevent army inflation; turn_capture=1
+        signals _end_turn to do the single draw.
+        """
         env = RisikoEnv(n_players=3)
         env.reset(seed=42)
         env.state.territory_owner[:] = 0
@@ -637,7 +687,11 @@ class TestElimination:
         env.state.territory_owner[1] = 2
         before = len(env.state.cards[0])
         env._resolve_attack(0, 1, 2)
-        assert len(env.state.cards[0]) > before
+        # No card drawn yet — only turn_capture flag is set.
+        assert env.state.turn_capture == 1, "turn_capture must be set after a capture"
+        assert len(env.state.cards[0]) == before, (
+            "card must not be drawn immediately per-capture; it is drawn at _end_turn"
+        )
 
     def test_forced_trade_when_over_max(self):
         """If card transfer exceeds max, a forced trade happens."""

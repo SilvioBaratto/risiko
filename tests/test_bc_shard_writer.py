@@ -32,6 +32,23 @@ class _BCConfig:
     shard_size: int
     dataset_dir: str
     seed: int = 0
+    n_games: int = 2
+    explore_eps: float = 0.1
+    n_players: int = 6
+    max_turns: int = 200
+    batch_size: int = 32
+    lr: float = 0.001
+
+
+@dataclasses.dataclass(frozen=True)
+class _NetworkConfig:
+    hidden_sizes: tuple[int, ...] = (256, 256)
+
+
+@dataclasses.dataclass(frozen=True)
+class _CfgStub:
+    bc: _BCConfig
+    network: _NetworkConfig = dataclasses.field(default_factory=_NetworkConfig)
 
 
 def _make_obs() -> np.ndarray:
@@ -267,12 +284,13 @@ def test_one_update_step_succeeds_when_pretrained_pt_loaded_into_ppo_trainer(tmp
     output_path = tmp_path / "pretrained.pt"
 
     np.random.seed(0)
-    tiny_cfg = _BCConfig(shard_size=5, dataset_dir=str(data_dir), seed=0)
-    with ShardWriter(tiny_cfg) as w:
+    tiny_bc = _BCConfig(shard_size=5, dataset_dir=str(data_dir), seed=0)
+    with ShardWriter(tiny_bc) as w:
         for _ in range(10):
             w.write(np.random.rand(OBS_DIM).astype(np.float32), _make_labels())
 
-    pretrain(tiny_cfg, output_path=str(output_path))
+    cfg = _CfgStub(bc=tiny_bc)
+    pretrain(cfg, output_path=str(output_path))
     assert output_path.exists()
 
     trainer = SelfPlayTrainer.from_checkpoint(str(output_path))

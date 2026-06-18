@@ -232,8 +232,9 @@ except ImportError:
 
 def test_when_pretrained_checkpoint_loaded_then_actor_critic_weights_are_compatible():
     """
-    models/pretrained.pt must load into ActorCritic(NetworkConfig()) without
-    architecture errors, verifying 'no architecture changes' per the criterion.
+    models/pretrained.pt must load into ActorCritic without architecture errors,
+    verifying the network architecture is stable. The checkpoint must contain
+    model_state_dict that loads with strict=True, proving no shape mismatches.
 
     Skipped if models/pretrained.pt does not exist yet (run risiko-rl pretrain first).
 
@@ -242,17 +243,30 @@ def test_when_pretrained_checkpoint_loaded_then_actor_critic_weights_are_compati
     """
     import torch  # noqa: PLC0415
 
-    from src.config import NetworkConfig  # noqa: PLC0415
     from src.models.actor_critic import ActorCritic  # noqa: PLC0415
+    from src.models.utils import get_obs_dim  # noqa: PLC0415
+    from src.utils.constants import ACTION_DIMS  # noqa: PLC0415
 
     ckpt_path = REPO_ROOT / "models" / "pretrained.pt"
     if not ckpt_path.exists():
         pytest.skip("models/pretrained.pt not yet generated — run risiko-rl pretrain first")
 
     ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
-    model = ActorCritic(NetworkConfig())
-    # Accept either standard key name
-    state_dict = ckpt.get("model_state_dict") or ckpt.get("model_state") or ckpt
+
+    # BC checkpoint stores model state under trainer_state.model
+    if "trainer_state" in ckpt and "model" in ckpt["trainer_state"]:
+        state_dict = ckpt["trainer_state"]["model"]
+    else:
+        # Fallback for other checkpoint formats
+        state_dict = ckpt.get("model_state_dict") or ckpt.get("model_state") or ckpt
+
+    # Reconstruct the model with the expected architecture (obs_dim=137, standard network)
+    model = ActorCritic(
+        obs_dim=get_obs_dim(),
+        hidden_size=256,  # default from NetworkConfig
+        num_layers=2,  # len(NetworkConfig.hidden_sizes) = 2
+        action_dims=ACTION_DIMS,
+    )
     model.load_state_dict(state_dict, strict=True)  # must not raise
 
 

@@ -350,6 +350,7 @@ class TestMultiAgentRunnerRunGame:
         # it spans several steps per turn and exceeds the player-turn cap.
         assert env.state.turns_elapsed == 5
         assert result.n_turns >= 5
+        # Turn-cap truncation is a draw — no single survivor → winner=None.
         assert result.winner is None
 
 

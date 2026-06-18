@@ -19,6 +19,7 @@ __all__ = [
     "STARTING_ARMIES",
     "MAX_ARMIES_PARAM",
     "ACTION_DIMS",
+    "FORTIFY_ADJACENT_ONLY_DEFAULT",
     "get_trade_value",
     "territory_to_continent",
 ]
@@ -182,6 +183,11 @@ def territory_to_continent(territory_id: int) -> str | None:
     """Return the continent name for a territory, or None if invalid."""
     return _TERRITORY_TO_CONTINENT.get(territory_id)
 
+
+# Official Risk rule: fortification is a single move into one directly adjacent own
+# territory.  Set to False to restore the legacy house-rule where any connected chain
+# of own territories counts as reachable.
+FORTIFY_ADJACENT_ONLY_DEFAULT: bool = True
 
 # Maximum army count expressible in a single action parameter.
 # param_a/b/c double as territory indices (0-41) and army counts; this cap

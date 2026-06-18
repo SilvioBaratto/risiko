@@ -51,9 +51,15 @@ class _PPOStub:
 
 
 @dataclasses.dataclass(frozen=True)
+class _NetworkStub:
+    hidden_sizes: tuple[int, ...] = (256, 256)
+
+
+@dataclasses.dataclass(frozen=True)
 class _CfgStub:
     bc: _BCStub
     ppo: _PPOStub = dataclasses.field(default_factory=_PPOStub)
+    network: _NetworkStub = dataclasses.field(default_factory=_NetworkStub)
 
 
 def _cfg(

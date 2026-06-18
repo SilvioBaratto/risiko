@@ -19,6 +19,7 @@ from src.utils.constants import (
     CARD_SYMBOLS,
     CONTINENT_BONUSES,
     CONTINENTS,
+    FORTIFY_ADJACENT_ONLY_DEFAULT,
     MAX_ARMIES_PARAM,
     NUM_TERRITORIES,
     STARTING_ARMIES,
@@ -70,13 +71,29 @@ class RisikoEnv(gym.Env):
         self,
         n_players: int = 3,
         reward_config: RewardConfig | None = None,
+        fortify_adjacent_only: bool | None = None,
     ):
-        """Initialize the environment."""
+        """Initialize the environment.
+
+        Args:
+            n_players: Number of players (2–6).
+            reward_config: Reward shaping configuration.
+            fortify_adjacent_only: When True (default), fortification only moves
+                armies into a directly adjacent own territory (official Risk rule).
+                When False, any own territory reachable via a connected chain of own
+                territories is a legal destination (legacy house-rule).  Defaults to
+                ``FORTIFY_ADJACENT_ONLY_DEFAULT`` from ``src/utils/constants.py``.
+        """
         super().__init__()
         if not 2 <= n_players <= 6:
             raise ValueError("n_players must be 2-6")
         self.n_players = n_players
         self.reward_config = reward_config or RewardConfig()
+        self.fortify_adjacent_only = (
+            FORTIFY_ADJACENT_ONLY_DEFAULT
+            if fortify_adjacent_only is None
+            else fortify_adjacent_only
+        )
         self.state: GameState = GameState()
         self.observation_space = spaces.Dict(
             {
@@ -159,6 +176,10 @@ class RisikoEnv(gym.Env):
 
     def _get_info(self) -> dict[str, Any]:
         return {"legal_actions": self._get_legal_actions()}
+
+    def get_legal_actions(self) -> list[dict[str, int]]:
+        """Return legal actions for the current player and phase."""
+        return self._get_legal_actions()
 
     # ------------------------------------------------------------------
     # State initialisation
@@ -284,6 +305,8 @@ class RisikoEnv(gym.Env):
         player = s.current_player
         hand = s.cards[player]
         if action["action_type"] == 5:  # skip
+            if self._has_tradeable_cards(player):
+                return False
             s.phase = PHASE_REINFORCE
             return True
         if not self._is_valid_trade([a, b, c], player):
@@ -294,6 +317,8 @@ class RisikoEnv(gym.Env):
         for idx in sorted([a, b, c], reverse=True):
             if 0 <= idx < len(hand):
                 s.discard_pile.append(hand.pop(idx))
+        if self._has_tradeable_cards(player):
+            return True
         s.phase = PHASE_REINFORCE if s.reinforcements_remaining > 0 else PHASE_ATTACK
         return True
 
@@ -321,6 +346,10 @@ class RisikoEnv(gym.Env):
             if self._is_valid_trade(list(combo), player):
                 return True
         return False
+
+    def _must_trade(self) -> bool:
+        s = self.state
+        return s.phase == PHASE_TRADE and self._has_tradeable_cards(s.current_player)
 
     # ------------------------------------------------------------------
     # Reinforce
@@ -396,8 +425,6 @@ class RisikoEnv(gym.Env):
                 defender_player,
             )
             self._eliminate_player(defender_player)
-            if len(s.cards[s.current_player]) < MAX_CARDS:
-                self._draw_card(s.current_player)
             if s.armies[attacker] >= 2:
                 s.phase = PHASE_CAPTURE_MOVE
             else:
@@ -480,7 +507,12 @@ class RisikoEnv(gym.Env):
             return False
         if count < 1 or count >= s.armies[source]:
             return False
-        if not self._is_connected(source, dest, player):
+        reachable = (
+            dest in ADJACENCY[source]
+            if self.fortify_adjacent_only
+            else self._is_connected(source, dest, player)
+        )
+        if not reachable:
             return False
         s.armies[source] -= count
         s.armies[dest] += count
@@ -488,6 +520,11 @@ class RisikoEnv(gym.Env):
         return True
 
     def _is_connected(self, source: int, target: int, player: int) -> bool:
+        """Legacy connected-chain reachability (used only when fortify_adjacent_only=False).
+
+        DFS over own territories via ADJACENCY.  Returns True when *target* is
+        reachable from *source* through any chain of *player*-owned territories.
+        """
         visited = set()
         stack = [source]
         while stack:
@@ -646,7 +683,8 @@ class RisikoEnv(gym.Env):
             )
 
         if s.phase == PHASE_TRADE:
-            add(5, 0, 0, 0, 0)
+            if not self._must_trade():
+                add(5, 0, 0, 0, 0)
             hand = s.cards[player]
             from itertools import combinations
 
@@ -681,13 +719,22 @@ class RisikoEnv(gym.Env):
                 add(3, move, 0, 0, 0)
         elif s.phase == PHASE_FORTIFY:
             add(5, 0, 0, 0, 0)
-            owned = np.where((s.territory_owner == player) & (s.armies >= 2))[0]
-            for source in owned:
-                for target in owned:
-                    if source == target:
-                        continue
-                    if self._is_connected(source, target, player):
-                        cap = min(int(s.armies[source]) - 1, MAX_ARMIES_PARAM)
-                        for count in range(1, cap + 1):
-                            add(4, int(source), int(target), count, 0)
+            sources = np.where((s.territory_owner == player) & (s.armies >= 2))[0]
+            if self.fortify_adjacent_only:
+                for source in sources:
+                    cap = min(int(s.armies[source]) - 1, MAX_ARMIES_PARAM)
+                    for target in ADJACENCY[source]:
+                        if s.territory_owner[target] == player:
+                            for count in range(1, cap + 1):
+                                add(4, int(source), int(target), count, 0)
+            else:
+                all_owned = {int(t) for t in np.where(s.territory_owner == player)[0]}
+                for source in sources:
+                    cap = min(int(s.armies[source]) - 1, MAX_ARMIES_PARAM)
+                    for target in all_owned:
+                        if target == int(source):
+                            continue
+                        if self._is_connected(int(source), target, player):
+                            for count in range(1, cap + 1):
+                                add(4, int(source), target, count, 0)
         return actions

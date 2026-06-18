@@ -242,6 +242,7 @@ class TestModuleExports:
             "STARTING_ARMIES",
             "MAX_ARMIES_PARAM",
             "ACTION_DIMS",
+            "FORTIFY_ADJACENT_ONLY_DEFAULT",
             "get_trade_value",
             "territory_to_continent",
         }
