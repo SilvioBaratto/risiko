@@ -224,3 +224,7 @@ graphify-out/cost.json
 .code-generator/
 graphify-out/
 data/bc/
+
+# pytest tmp_path basetemp + torch inductor cache (machine-local junk)
+pytest-of-*/
+torchinductor_*/

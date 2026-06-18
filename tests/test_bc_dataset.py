@@ -387,9 +387,8 @@ def test_when_pretrained_pt_loaded_into_ppo_trainer_then_update_step_succeeds(tm
     one update step passes with no architecture changes to SelfPlayTrainer / PPO loop.
     Marked integration — excluded from the default suite via -m 'not integration'.
     """
-    from training.bc_trainer import pretrain
-
     from training.bc_dataset import generate_bc_dataset
+    from training.bc_trainer import pretrain
     from training.self_play import SelfPlayTrainer
 
     data_dir = tmp_path / "data"
