@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from src.agents.llm_opponent import LLMOpponent
 from src.agents.player_config import load_profiles_from_yaml
 from src.agents.ppo_agent import PPOAgent
 from src.agents.random_agent import RandomAgent
+from src.config import resolve_device
 from src.models.actor_critic import ActorCritic
 from src.models.utils import get_obs_dim
 from src.utils.constants import ACTION_DIMS
@@ -43,6 +45,8 @@ def load_agent(spec: str, *, seed: int | None = None) -> Any:
 
     checkpoint = safe_torch_load(path)
     config = checkpoint.get("config", {})
+    if dataclasses.is_dataclass(config):
+        config = dataclasses.asdict(config)
     network_cfg = config.get("network", {})
     hidden_sizes = network_cfg.get("hidden_sizes", (256, 256))
 
@@ -53,7 +57,7 @@ def load_agent(spec: str, *, seed: int | None = None) -> Any:
         action_dims=ACTION_DIMS,
     )
     net.load_state_dict(checkpoint["trainer_state"]["model"])
-    device = config.get("device", "cpu")
+    device = resolve_device(config.get("device", "cpu"))
     return PPOAgent(net, device=device)
 
 

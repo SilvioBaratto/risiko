@@ -85,9 +85,11 @@ def test_when_pretrained_checkpoint_loaded_into_ppo_trainer_then_one_update_step
 
     assert pathlib.Path(checkpoint_path).exists(), "Pretrained checkpoint was not written"
 
-    # Warm-start round-trip: a fresh SelfPlayTrainer must load the BC payload without raising.
+    # Warm-start round-trip: a fresh SelfPlayTrainer must load the BC payload
+    # without raising, and then complete one PPO update step.
     trainer = SelfPlayTrainer(cfg)
     trainer.load_checkpoint(pathlib.Path(checkpoint_path))
+    trainer.update_step()
 
 
 # ---------------------------------------------------------------------------

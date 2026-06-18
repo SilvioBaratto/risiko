@@ -1,0 +1,67 @@
+# BC warm-start pretraining configuration.
+#
+# Phase 0: offline heuristic self-play → sharded .npz dataset → supervised clone
+# into ActorCritic. The resulting models/pretrained.pt is loaded by SelfPlayTrainer
+# via the existing checkpoint resume path (cp models/pretrained.pt models/latest.pt).
+#
+# Dataset generation: ~10 000 games at ~6 players takes minutes on CPU.
+# No LLM / network calls are made during generation or pretraining.
+
+total_timesteps: 0
+n_envs: 1
+save_freq: 100
+eval_freq: 50
+seed: 42
+device: auto
+max_turns: 500
+
+ppo:
+  lr: 0.0003
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  entropy_coef: 0.01
+  value_loss_coef: 0.5
+  max_grad_norm: 0.5
+  n_steps: 2048
+  n_epochs: 10
+  batch_size: 64
+
+network:
+  hidden_sizes: [256, 256]
+  activation: tanh
+
+self_play:
+  opponent_update_freq: 50
+  best_metric: win_rate
+  promote_threshold: 0.55
+  eval_games: 10
+  n_players: 6
+
+reward:
+  sparse_win: 1.0
+  sparse_loss: -1.0
+  dense_territory_delta: 0.01
+  dense_continent_bonus_delta: 0.05
+  dense_army_ratio: 0.005
+  dense_elimination_bonus: 0.1
+  invalid_action_penalty: -0.01
+
+bc:
+  n_games: 10000
+  n_players: 6
+  max_turns: 500
+  seed: 42
+  dataset_dir: data/bc
+  shard_size: 10000
+  demonstrator: heuristic
+  epochs: 10
+  batch_size: 512
+  lr: 0.0003
+  value_loss_coef: 0.5
+  val_split: 0.1
+  early_stop_patience: 5
+  output_path: models/pretrained.pt
+  explore_eps: 0.1
+  label_smoothing: 0.05
+  entropy_coef: 0.01

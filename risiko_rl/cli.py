@@ -60,6 +60,19 @@ def _preflight_validate_model(cfg: TrainingConfig) -> None:
         )
 
 
+def _parse_overrides(overrides_raw: list[str] | None) -> dict[str, str]:
+    """Parse ``--override key=value`` flags; raise BadParameter on malformed input."""
+    if not overrides_raw:
+        return {}
+    result: dict[str, str] = {}
+    for o in overrides_raw:
+        if "=" not in o:
+            raise typer.BadParameter(f"Override must be key=value, got: {o}")
+        key, value = o.split("=", 1)
+        result[key] = value
+    return result
+
+
 @app.command()
 def train(
     config: Annotated[
@@ -141,6 +154,42 @@ def train(
     trainer = SelfPlayTrainer(cfg, checkpoint_dir=checkpoint_dir, log_dir=log_dir)
     trainer.train()
     typer.echo(f"Training complete. Episodes: {trainer._episode}")
+
+
+@app.command()
+def pretrain(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Path to YAML config file"),
+    ] = Path("config/bc_pretrain.yaml"),
+    override: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--override",
+            "-o",
+            help="Generic override as key=value (e.g. bc.n_games=200 bc.epochs=1)",
+        ),
+    ] = None,
+) -> None:
+    """BC pretraining: generate dataset (if absent), then supervised clone into ActorCritic."""
+    setup_logging()
+    cfg = load_config(config)
+    cfg = merge_cli_overrides(cfg, _parse_overrides(override))
+
+    from training.bc_dataset import generate_bc_dataset  # noqa: PLC0415
+    from training.bc_trainer import pretrain as run_bc_pretrain  # noqa: PLC0415
+
+    dataset_dir = Path(cfg.bc.dataset_dir)
+    if any(dataset_dir.glob("*.npz")):
+        typer.echo(f"Dataset already present at '{cfg.bc.dataset_dir}', skipping generation.")
+    else:
+        typer.echo(f"Generating BC dataset ({cfg.bc.n_games} games) ...")
+        generate_bc_dataset(cfg)
+        typer.echo("Dataset generation complete.")
+
+    typer.echo(f"Running BC pretraining → {cfg.bc.output_path} ...")
+    run_bc_pretrain(cfg)
+    typer.echo(f"Pretraining complete. Checkpoint: {cfg.bc.output_path}")
 
 
 @app.command()

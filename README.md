@@ -87,10 +87,41 @@ The CLI is installed as `risiko-rl` or run via `python -m risiko_rl.cli`.
 
 | Command | Description |
 |---|---|
-| `train` | Run self-play PPO training |
+| `pretrain` | Generate heuristic demo dataset + BC-pretrain the policy (warm-start) |
+| `train` | Run self-play PPO training (auto-resumes from `<checkpoint-dir>/latest.pt`) |
 | `evaluate` | Head-to-head evaluation between two agents |
 | `watch` | Watch a single game rendered frame-by-frame |
 | `benchmark` | Monte Carlo baselines (random vs random, random vs LLM) |
+| `bc_eval` | Validate pretrained policy win-rate vs random with Wilson CIs (`training/bc_eval.py`) |
+
+### `pretrain`
+
+BC warm-start: generate a heuristic demonstration dataset then supervised-clone the policy into the existing `ActorCritic` weights. Uses the AlphaGo SL→RL pattern — one offline pretrain, PPO corrects drift online.
+
+```bash
+# Step 1 — generate demos + BC-pretrain (writes models/pretrained.pt)
+risiko-rl pretrain --config config/bc_pretrain.yaml
+
+# Step 2 — warm-start PPO: place the pretrained weights where train auto-resumes
+cp models/pretrained.pt models/latest.pt
+risiko-rl train --config config/random_6p_pretrain.yaml --checkpoint-dir models
+```
+
+> **No `--resume` flag.** `risiko-rl train` auto-resumes from `<checkpoint-dir>/latest.pt` whenever that file exists — there is no explicit `--resume` flag. The `cp` one-liner above is the only step needed to warm-start from a BC checkpoint.
+
+Override any `BCConfig` field without editing YAML:
+
+```bash
+risiko-rl pretrain --config config/bc_pretrain.yaml --override bc.n_games=5000 --override bc.epochs=20
+```
+
+To validate the pretrained policy beats random before spending PPO time, run the win-rate gate directly:
+
+```bash
+python -m training.bc_eval
+```
+
+---
 
 ### `train`
 

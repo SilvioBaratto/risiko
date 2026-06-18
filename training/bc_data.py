@@ -107,9 +107,9 @@ def _load_batches(path: Path, batch_size: int) -> Iterator[Batch]:
     for s in range(0, n, batch_size):
         e = s + batch_size
         yield Batch(
-            obs=torch.from_numpy(obs[s:e]),
+            obs=torch.from_numpy(obs[s:e]).float(),
             targets={h: torch.from_numpy(tgts[h][s:e]).long() for h in _HEAD_NAMES},
-            mc_return=torch.from_numpy(mc_ret[s:e]),
+            mc_return=torch.from_numpy(mc_ret[s:e]).float(),
         )
 
 
