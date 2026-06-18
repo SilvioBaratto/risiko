@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Direct RL training against glm LLM opponents — no pretraining phase.
+# Direct RL training against cloud LLM opponents — no pretraining phase.
 #
 # Self-detaching: by default the training runs in the background via nohup and
 # survives the terminal closing (no tmux needed). A PID file tracks the run so
 # it can be stopped/inspected later.
 #
 # The learner (slot 0) plays a 6-player game against 5 Ollama-served LLM
-# opponents (default glm-5.1:cloud). Asymmetric opponents → uneven boards →
+# opponents (default gemma4:31b-cloud). Asymmetric opponents → uneven boards →
 # the terminal margin reward + done-flag give the value head real targets, so
 # learning works without a self-play bootstrap (a 2p self-play pretrain is
 # symmetric → 21/21 stalemate → zero terminal signal, so it is skipped).
 # save_freq=1 + rollout-buffer persistence make every game durable and the run
-# crash-resumable. glm is latency-bound: ~hours/game, full training ~days.
+# crash-resumable. Throughput is LLM-latency-bound; gemma4:31b-cloud answers
+# in well under a second, so games run far faster than with glm.
 #
 # Usage:
 #   ./scripts/train.sh                 # start detached (resume latest.pt if present)
@@ -21,10 +22,10 @@
 #   ./scripts/train.sh --stop          # stop the running training
 #
 # Override defaults via env vars:
-#   MODEL=glm-5.1:cloud MAX_TURNS=150 N_STEPS=512 EPISODES=100000 \
+#   MODEL=gemma4:31b-cloud MAX_TURNS=150 N_STEPS=512 EPISODES=100000 \
 #   N_PLAYERS=2 CONFIG=config/llm_6p.yaml ./scripts/train.sh
 #
-# Tip: for faster iteration use N_PLAYERS=2 (learner vs 1 glm) — games resolve
+# Tip: for faster iteration use N_PLAYERS=2 (learner vs 1 LLM) — games resolve
 # (real win/loss) and there is 1 LLM call/turn instead of 5.
 
 set -euo pipefail
@@ -33,7 +34,7 @@ set -euo pipefail
 # Configuration (override via env vars)
 # ------------------------------------------------------------------
 
-MODEL="${MODEL:-glm-5.1:cloud}"          # Ollama model for every LLM opponent
+MODEL="${MODEL:-gemma4:31b-cloud}"       # Ollama model for every LLM opponent
 CONFIG="${CONFIG:-config/llm_6p.yaml}"   # LLM-mode config (llm_profiles_path set)
 MAX_TURNS="${MAX_TURNS:-150}"            # player-turn cap (turns, not env steps)
 N_STEPS="${N_STEPS:-512}"               # PPO rollout size — smaller = more frequent updates
@@ -125,12 +126,12 @@ OVERRIDES=(--override "max_turns=$MAX_TURNS" --override "ppo.n_steps=$N_STEPS")
 [ -n "$N_PLAYERS" ] && OVERRIDES+=(--override "self_play.n_players=$N_PLAYERS")
 
 echo "============================================================"
-echo "  Direct glm training"
+echo "  Direct LLM training"
 echo "  Model:        $MODEL"
 echo "  Config:       $CONFIG"
 echo "  max_turns:    $MAX_TURNS (player-turns)   ppo.n_steps: $N_STEPS"
 echo "  players:      ${N_PLAYERS:-<config default>}   episodes: ${EPISODES:-<config default>}"
-echo "  Expected wall time: ~days (glm latency-bound)"
+echo "  Expected wall time: LLM-latency-bound (fast with gemma4:31b-cloud)"
 echo "============================================================"
 
 # ------------------------------------------------------------------
