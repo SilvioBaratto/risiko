@@ -362,12 +362,14 @@ def test_when_gitignore_read_then_data_bc_is_excluded():
 
 
 @pytest.mark.slow
+@pytest.mark.integration
 def test_when_200_games_generated_then_wall_time_is_under_60_seconds(tmp_path):
     """
     Criterion: ≥10k games generate in minutes on CPU.
     Proxy: 200 games must complete in <60 s (= 200 games/min minimum rate,
     which extrapolates to 10k games in ≤50 min; 'minutes not hours').
-    Marked slow — excluded from the default suite via -m 'not slow'.
+    Wall-clock perf proxy — marked integration so CI's -m 'not integration'
+    skips it (it is environment-sensitive and not a correctness gate).
     """
     from training.bc_dataset import generate_bc_dataset
 
@@ -387,9 +389,8 @@ def test_when_pretrained_pt_loaded_into_ppo_trainer_then_update_step_succeeds(tm
     one update step passes with no architecture changes to SelfPlayTrainer / PPO loop.
     Marked integration — excluded from the default suite via -m 'not integration'.
     """
-    from training.bc_trainer import pretrain
-
     from training.bc_dataset import generate_bc_dataset
+    from training.bc_trainer import pretrain
     from training.self_play import SelfPlayTrainer
 
     data_dir = tmp_path / "data"

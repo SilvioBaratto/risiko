@@ -260,7 +260,6 @@ def test_data_bc_directory_is_excluded_when_gitignore_read():
 @pytest.mark.integration
 def test_one_update_step_succeeds_when_pretrained_pt_loaded_into_ppo_trainer(tmp_path):
     from training.bc_trainer import pretrain
-
     from training.self_play import SelfPlayTrainer
 
     data_dir = tmp_path / "data"

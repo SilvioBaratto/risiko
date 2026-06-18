@@ -207,7 +207,6 @@ marimo/_lsp/
 __marimo__/
 
 # Project specific
-CLAUDE.md
 results/runs/
 visualization/frames/
 # optional: commit for shared extraction speed, skip to keep repo small
@@ -224,3 +223,7 @@ graphify-out/cost.json
 .code-generator/
 graphify-out/
 data/bc/
+
+# pytest tmp_path basetemp + torch inductor cache (machine-local junk)
+pytest-of-*/
+torchinductor_*/
