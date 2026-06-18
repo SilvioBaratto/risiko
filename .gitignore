@@ -207,7 +207,6 @@ marimo/_lsp/
 __marimo__/
 
 # Project specific
-CLAUDE.md
 results/runs/
 visualization/frames/
 # optional: commit for shared extraction speed, skip to keep repo small
