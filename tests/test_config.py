@@ -300,6 +300,7 @@ class TestModuleExports:
         """__all__ exports all config dataclasses and utility functions."""
         assert set(config_module.__all__) == {
             "BCConfig",
+            "DiplomacyConfig",
             "HeuristicConfig",
             "PPOConfig",
             "NetworkConfig",

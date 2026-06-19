@@ -289,6 +289,78 @@ def evaluate(
 
 
 @app.command()
+def social_eval(
+    checkpoint: Annotated[
+        str,
+        typer.Option("--checkpoint", help="Learner checkpoint path or 'random'"),
+    ] = "random",
+    profiles: Annotated[
+        Path | None,
+        typer.Option("--profiles", help="Player profile YAML for the LLM pool"),
+    ] = None,
+    n_games: Annotated[
+        int,
+        typer.Option("--n-games", help="Number of evaluation games"),
+    ] = 100,
+    n_players: Annotated[
+        int,
+        typer.Option("--n-players", help="Total players per game"),
+    ] = 6,
+    n_rounds: Annotated[
+        int,
+        typer.Option("--n-rounds", help="Negotiation rounds per game (cost cap)"),
+    ] = 1,
+    seed: Annotated[
+        int,
+        typer.Option("--seed", help="Base RNG seed"),
+    ] = 42,
+    max_turns: Annotated[
+        int,
+        typer.Option("--max-turns", help="Turn cap per game"),
+    ] = 1000,
+):
+    """Social evaluation: RL learner win-rate vs coordinating LLM pool."""
+    setup_logging()
+    from src.agents.player_config import load_profiles_from_yaml  # noqa: PLC0415
+    from src.config import DiplomacyConfig  # noqa: PLC0415
+    from training.social_eval import run_social_eval  # noqa: PLC0415
+
+    learner = load_agent(checkpoint)
+    pool = _build_pool(profiles, n_players)
+    loaded_profiles = load_profiles_from_yaml(profiles) if profiles is not None else None
+    diplo_cfg = DiplomacyConfig(
+        enabled=profiles is not None,
+        n_rounds=n_rounds,
+    )
+    typer.echo(f"social-eval: {n_games} games, {n_players} players, {n_rounds} rounds ...")
+    result = run_social_eval(
+        learner=learner,
+        llm_pool=pool,
+        n_games=n_games,
+        n_rounds=n_rounds,
+        seed=seed,
+        n_players=n_players,
+        max_turns=max_turns,
+        profiles=loaded_profiles,
+        cfg=diplo_cfg,
+    )
+    typer.echo("")
+    typer.echo(
+        f"Learner win-rate: {result.learner_win_rate:.3f} "
+        f"[{result.ci_low:.3f}, {result.ci_high:.3f}]"
+    )
+    typer.echo(f"Total negotiation calls: {result.total_negotiation_calls}")
+
+
+def _build_pool(profiles: Path | None, n_players: int) -> list[Any]:
+    if profiles is not None:
+        from risiko_rl.agent_loader import load_llm_pool  # noqa: PLC0415
+
+        return load_llm_pool(profiles)
+    return [load_agent("random") for _ in range(n_players - 1)]
+
+
+@app.command()
 def benchmark(
     games: int = typer.Option(50, "--games", help="Games per matchup"),
     n_players: int = typer.Option(2, "--n-players", help="Total players per game"),

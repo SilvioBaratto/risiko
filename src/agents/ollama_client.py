@@ -43,8 +43,10 @@ from typing import Any
 
 import httpx
 import numpy as np
+from httpx import HTTPError as _HttpxHTTPError
 
 from src.agents.action_prompt import render_action_prompt
+from src.agents.diplomacy import DiplomacyNote
 from src.utils.env import ensure_env_loaded
 from src.utils.log import get_logger
 
@@ -68,6 +70,34 @@ _ACTION_SCHEMA: dict[str, Any] = {
     "required": ["action_index"],
     "additionalProperties": False,
 }
+
+# Negotiation schema: only integer-array fields are constrained. The
+# `messages_to` field (object with open-ended string keys) is intentionally
+# omitted — XGrammar/GBNF cannot enforce dynamic key names, so constraining
+# it yields no guarantee and may produce parse failures. The model may still
+# emit `messages_to` as additional text; `_parse_negotiation` returns the
+# full dict so callers can use it best-effort.
+_NEGOTIATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "propose_alliance_with": {"type": "array", "items": {"type": "integer"}},
+        "accept_alliance_with": {"type": "array", "items": {"type": "integer"}},
+        "declare_war_on": {"type": "array", "items": {"type": "integer"}},
+        "attack_priority": {"type": "array", "items": {"type": "integer"}},
+    },
+    "required": [
+        "propose_alliance_with",
+        "accept_alliance_with",
+        "declare_war_on",
+        "attack_priority",
+    ],
+}
+
+_NEGOTIATION_SYSTEM = (
+    "You are a Risiko diplomat. Based on the board state and current alliances, "
+    "emit ONLY a JSON negotiation object with integer-array fields. "
+    "Do not write any prose — output the JSON object and nothing else."
+)
 
 # System message enforcing JSON-only output. The native `format` mask already
 # constrains decoding, but some models (e.g. gemma4) intermittently ignore it
@@ -94,6 +124,7 @@ def call_ollama_for_action_index(
     temperature: float = 0.1,
     top_p: float | None = None,
     strategy_hint: str | None = None,
+    diplomacy_note: DiplomacyNote | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     think: bool = False,
 ) -> int | None:
@@ -115,6 +146,8 @@ def call_ollama_for_action_index(
         temperature: Sampling temperature.
         top_p: Optional nucleus-sampling parameter.
         strategy_hint: Optional directive injected into the prompt.
+        diplomacy_note: Optional eval-only social context (allies, leader, grudges);
+            ``None`` produces byte-identical output to the training-path call.
         max_tokens: Completion-token ceiling (sized for reasoning headroom).
         think: Enable model chain-of-thought. Default False — the answer is a
             single legal-action index needing no reasoning, and disabling it
@@ -131,7 +164,7 @@ def call_ollama_for_action_index(
     base = (base_url or os.environ.get(ENV_BASE_URL) or DEFAULT_BASE_URL).rstrip("/")
     key = api_key or os.environ.get(ENV_API_KEY) or DEFAULT_API_KEY
 
-    prompt = render_action_prompt(obs, legal_actions, strategy_hint)
+    prompt = render_action_prompt(obs, legal_actions, strategy_hint, diplomacy_note=diplomacy_note)
     body: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -300,9 +333,95 @@ def _parse_index(
     return None
 
 
+def call_ollama_for_negotiation(
+    *,
+    root: str,
+    key: str,
+    model: str,
+    prompt: str,
+    max_message_tokens: int,
+    temperature: float = 0.7,
+    timeout: float = 60.0,
+    think: bool = False,
+) -> dict[str, Any] | None:
+    """Call Ollama for a negotiation response; returns a parsed dict or None.
+
+    Same fallback contract as :func:`call_ollama_for_action_index`: any HTTP,
+    timeout, or parse error returns ``None`` without raising.
+
+    Args:
+        root: Ollama root URL, e.g. ``http://localhost:11434`` (no ``/v1``).
+        key: API key (``Authorization: Bearer``).
+        model: Model tag, e.g. ``gemma4:12b``.
+        prompt: Pre-rendered negotiation prompt string.
+        max_message_tokens: Hard ceiling for ``num_predict`` (caps response length).
+        temperature: Sampling temperature; default 0.7 for varied social play.
+        timeout: Per-call HTTP timeout in seconds.
+        think: Enable model chain-of-thought. Default False.
+    """
+    body = _build_negotiation_body(model, prompt, max_message_tokens, temperature, think)
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    return _post_negotiation(f"{root}/api/chat", headers, body, timeout)
+
+
+def _build_negotiation_body(
+    model: str,
+    prompt: str,
+    max_message_tokens: int,
+    temperature: float,
+    think: bool,
+) -> dict[str, Any]:
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _NEGOTIATION_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        "format": _NEGOTIATION_SCHEMA,
+        "stream": False,
+        "think": think,
+        "options": {"temperature": temperature, "num_predict": max_message_tokens},
+    }
+
+
+def _post_negotiation(
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    timeout: float,
+) -> dict[str, Any] | None:
+    try:
+        resp = httpx.post(url, json=body, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return _parse_negotiation(resp.json())
+    except (_HttpxHTTPError, ValueError) as exc:
+        _log.warning("call_ollama_for_negotiation error: %s", exc)
+        return None
+
+
+def _parse_negotiation(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract negotiation dict from raw Ollama reply; None on any failure."""
+    message = data.get("message") or {}
+    content = (message.get("content") or "").strip()
+    if not content:
+        _log.warning("negotiation: empty content")
+        return None
+    if data.get("done_reason") == "length":
+        _log.warning("negotiation: response truncated (done_reason=length) → None")
+        return None
+    try:
+        parsed = json.loads(content)
+    except (json.JSONDecodeError, ValueError):
+        _log.warning("negotiation: JSON parse error on %.80r", content)
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 __all__ = [
     "call_ollama_for_action_index",
+    "call_ollama_for_negotiation",
     "list_ollama_models",
+    "_NEGOTIATION_SCHEMA",
     "ENV_BASE_URL",
     "ENV_API_KEY",
     "DEFAULT_BASE_URL",

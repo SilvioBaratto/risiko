@@ -33,8 +33,10 @@ class RandomAgent(Agent):
         legal_actions: list[dict[str, int]],
         *,
         deterministic: bool = False,
+        context=None,
     ) -> tuple[dict[str, int], torch.Tensor, torch.Tensor]:
         """Select action and return dummy value/logprob tensors."""
+        del context  # ignored; accepted so DiplomacyRunner can call all agents uniformly
         action = self.act(obs, legal_actions, deterministic=deterministic)
         value = torch.tensor(float("nan"))
         logprob = torch.tensor(float("nan"))

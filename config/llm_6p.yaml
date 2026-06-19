@@ -64,3 +64,11 @@ early_stop:
   patience: 10        # evals with no improvement before stopping
   min_delta: 0.01     # smallest smoothed win-rate gain that counts
   restore_best: true  # reload best.pt when stopping
+
+# Diplomacy layer — eval-only. Disabled here; set enabled: true only in the
+# social-eval harness. Training reads diplomacy: but the enabled=false default
+# guarantees zero negotiation calls on all training paths.
+diplomacy:
+  enabled: false
+  n_rounds: 1
+  max_message_tokens: 128

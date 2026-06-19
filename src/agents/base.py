@@ -28,6 +28,7 @@ class Agent(Protocol):
         legal_actions: list[dict[str, int]],
         *,
         deterministic: bool = False,
+        context=None,
     ) -> tuple[dict[str, int], torch.Tensor, torch.Tensor]:
         """Select an action given observation and legal actions.
 
@@ -35,6 +36,8 @@ class Agent(Protocol):
             obs: Environment observation dict (numpy arrays).
             legal_actions: List of valid action dicts for the current state.
             deterministic: When ``True``, select greedily (used for evaluation).
+            context: Optional DiplomacyContext injected by DiplomacyRunner for
+                eval-only social conditioning. Training paths leave it ``None``.
 
         Returns:
             Selected action as a dict with keys ``action_type``, ``param_a``,

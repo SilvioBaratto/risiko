@@ -23,6 +23,7 @@ def _config_safe_globals() -> list[Any]:
     """Project config dataclasses stored inside checkpoints."""
     from src.config import (
         BCConfig,
+        DiplomacyConfig,
         EarlyStopConfig,
         HeuristicConfig,
         NetworkConfig,
@@ -41,6 +42,7 @@ def _config_safe_globals() -> list[Any]:
         RewardConfig,
         BCConfig,
         HeuristicConfig,
+        DiplomacyConfig,
     ]
 
 

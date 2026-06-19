@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from src.agents.diplomacy import DiplomacyNote
 from src.utils.constants import CONTINENT_BONUSES, CONTINENTS, TERRITORY_NAMES
 
 _PHASE_NAMES = {
@@ -46,16 +47,22 @@ def render_action_prompt(
     obs: dict[str, np.ndarray],
     legal_actions: list[dict[str, int]],
     strategy_hint: str | None = None,
+    *,
+    diplomacy_note: DiplomacyNote | None = None,
 ) -> str:
     """Render a structured, LLM-friendly prompt.
 
     Sections (in order):
       1. Header — player, phase, phase instruction
       2. Strategy hint (if provided)
-      3. Status line — reinforcements / trade count / cards
-      4. Board — grouped by continent, own territories marked with ★
-      5. Legal actions — grouped by action type, semantic descriptions
-      6. Reply instruction
+      3. Diplomacy note (if provided — eval-only social context)
+      4. Status line — reinforcements / trade count / cards
+      5. Board — grouped by continent, own territories marked with ★
+      6. Legal actions — grouped by action type, semantic descriptions
+      7. Reply instruction
+
+    When ``diplomacy_note`` is ``None`` the output is byte-identical to the
+    training-path render (disabled-equivalence guarantee).
     """
     me = int(obs["current_player"])
     phase = int(obs["phase"])
@@ -68,12 +75,28 @@ def render_action_prompt(
     ]
     if strategy_hint:
         parts.append(f"Strategy: {strategy_hint}")
+    if diplomacy_note is not None:
+        parts.append(_render_diplomacy(diplomacy_note))
 
     parts.append(_render_status(obs, phase))
     parts.append(_render_board(obs, me))
     parts.append(_render_legal_actions(legal_actions, obs))
     parts.append(f'Reply with JSON only: {{"action_index": <integer 0..{len(legal_actions) - 1}>}}')
     return "\n\n".join(parts)
+
+
+def _render_diplomacy(note: DiplomacyNote) -> str:
+    """Render the social-context section from a DiplomacyNote (eval-only)."""
+    lines = ["## Diplomacy"]
+    if note.allies:
+        ally_str = ", ".join(f"P{a}" for a in sorted(note.allies))
+        lines.append(f"Allies — do not attack: {ally_str}")
+    if note.leader is not None:
+        lines.append(f"Leader (prefer to target): P{note.leader}")
+    if note.grudges:
+        grudge_str = ", ".join(f"P{g}" for g in sorted(note.grudges))
+        lines.append(f"Grudges: {grudge_str}")
+    return "\n".join(lines)
 
 
 def _render_status(obs: dict[str, np.ndarray], phase: int) -> str:

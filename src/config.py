@@ -18,6 +18,7 @@ from src.utils.reward_config import RewardConfig
 
 __all__ = [
     "BCConfig",
+    "DiplomacyConfig",
     "HeuristicConfig",
     "PPOConfig",
     "NetworkConfig",
@@ -120,6 +121,15 @@ class SelfPlayConfig:
 
 
 @dataclass(frozen=True)
+class DiplomacyConfig:
+    """Eval-only diplomacy layer configuration; disabled by default."""
+
+    enabled: bool = False
+    n_rounds: int = 1
+    max_message_tokens: int = 128
+
+
+@dataclass(frozen=True)
 class EarlyStopConfig:
     """Early stopping on a fixed-baseline metric (win-rate vs ``RandomAgent``).
 
@@ -160,10 +170,12 @@ class TrainingConfig:
     self_play: SelfPlayConfig = field(default_factory=SelfPlayConfig)
     early_stop: EarlyStopConfig = field(default_factory=EarlyStopConfig)
     bc: BCConfig = field(default_factory=BCConfig)
+    diplomacy: DiplomacyConfig = field(default_factory=DiplomacyConfig)
 
 
-def load_config(path: Path) -> TrainingConfig:
+def load_config(path: Path | str) -> TrainingConfig:
     """Load a TrainingConfig from a YAML file."""
+    path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
     raw = yaml.safe_load(path.read_text())

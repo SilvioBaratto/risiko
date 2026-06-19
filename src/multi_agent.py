@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
 from src.agents.base import Agent
+from src.agents.diplomacy import DiplomacyContext, DiplomacyState
+from src.agents.negotiation import NegotiationOrchestrator
+from src.agents.player_config import DEFAULT_6P_PROFILES, PlayerConfig
 from src.agents.random_agent import RandomAgent
+from src.agents.reputation import ReputationBook
+from src.config import DiplomacyConfig
 from src.env import RisikoEnv
 from src.utils.log import get_logger
 
@@ -114,10 +119,13 @@ class MultiAgentRunner:
         while self._env.state.turns_elapsed < self._max_turns and step < step_ceiling:
             player = int(obs["current_player"])
             legal = info["legal_actions"]
+            pre_obs = obs
+            self._on_player_turn_start(player, obs, info)
             action, log_prob, value = self._pick_action(player, obs, legal)
             recorder.record_action(player, action)
             prev_trade_count = self._env.state.trade_count
             obs, reward, terminated, truncated, info = self._env.step(action)
+            self._after_step(player, action, pre_obs, obs)
             recorder.record_step(obs, action, reward, log_prob, value, legal)
             recorder.detect_trade(prev_trade_count, self._env.state.turns_elapsed)
             step += 1
@@ -150,6 +158,10 @@ class MultiAgentRunner:
         )
         return result
 
+    def run(self, seed: int | None = None) -> GameResult:
+        """Single-game alias for run_game; used by the social-eval harness."""
+        return self.run_game(seed=seed)
+
     def run_games(self, n: int, seed: int) -> list[GameResult]:
         """Play *n* games with sequential seeds and return results."""
         return [self.run_game(seed=seed + i) for i in range(n)]
@@ -178,6 +190,12 @@ class MultiAgentRunner:
         except Exception:
             fallback = RandomAgent().act({}, legal_actions)
             return fallback, math.nan, math.nan
+
+    def _on_player_turn_start(self, player: int, obs: dict, info: dict) -> None:
+        """Hook called before each action pick. Override in subclasses."""
+
+    def _after_step(self, player: int, action: dict, pre_obs: dict, new_obs: dict) -> None:
+        """Hook called after env.step. Override in subclasses."""
 
     @staticmethod
     def _skip_action() -> dict[str, int]:
@@ -271,3 +289,139 @@ class _GameRecorder:
             if self._prev_eliminated[p] == 0 and curr[p] == 1:
                 self._elimination_order.append(p)
         self._prev_eliminated = curr.copy()
+
+
+class DiplomacyRunner(MultiAgentRunner):
+    """Eval-only subclass that adds the diplomacy layer to MultiAgentRunner.
+
+    Fires a bounded negotiation round at each player-turn boundary, injects a
+    ``DiplomacyContext`` into every non-learner seat's ``act_with_meta`` call,
+    and detects betrayal (ally attacking ally) deterministically after each
+    env step.
+
+    The RL learner (slot ``learner_id``, default 0) is never passed a context
+    and is excluded from negotiation speakers — its training path is unchanged.
+
+    When ``diplomacy_cfg.enabled`` is ``False`` the game is byte-identical to a
+    plain ``MultiAgentRunner`` run.
+    """
+
+    def __init__(
+        self,
+        env: RisikoEnv,
+        agents: Sequence[Agent],
+        max_turns: int = 1000,
+        stop_on_eliminated: int | None = None,
+        *,
+        diplomacy_cfg: DiplomacyConfig | None = None,
+        state: DiplomacyState | None = None,
+        reputation: ReputationBook | None = None,
+        learner_id: int = 0,
+        profiles: Sequence[PlayerConfig] | None = None,
+        call_fn: Callable[[int, str], dict | None] | None = None,
+    ) -> None:
+        """Initialise runner with environment, agents, and diplomacy config.
+
+        Args:
+            env: The Risiko environment the agents play in.
+            agents: One agent per player slot, in player-id order.
+            max_turns: Player-turn cap; the game aborts as a draw past it.
+            stop_on_eliminated: If set, end the game when this player is eliminated.
+            diplomacy_cfg: Diplomacy layer config; disabled by default.
+            state: Shared DiplomacyState instance; a fresh one is created if None.
+            reputation: Cross-game reputation tracker; a fresh one if None.
+            learner_id: Player-slot of the RL learner (excluded from negotiation).
+            profiles: Per-player LLM sampling profiles; defaults to the first
+                ``n_players`` entries of ``DEFAULT_6P_PROFILES``.
+            call_fn: Injectable ``(player_id, prompt) -> dict | None`` for
+                negotiation.  ``None`` uses a no-op (no LLM calls) so the
+                disabled-equivalence guarantee is preserved by default.  Pass
+                a real Ollama wrapper or a mocked function for real/test use.
+        """
+        super().__init__(env, agents, max_turns, stop_on_eliminated)
+        self._cfg = diplomacy_cfg if diplomacy_cfg is not None else DiplomacyConfig()
+        self._state = state if state is not None else DiplomacyState()
+        self._reputation = reputation if reputation is not None else ReputationBook()
+        self._learner_id = learner_id
+        self.call_count: int = 0
+        self._last_negotiation_turn: int = -1
+        self._orchestrator: NegotiationOrchestrator | None = None
+        if self._cfg.enabled:
+            _profiles = (
+                profiles if profiles is not None else list(DEFAULT_6P_PROFILES[: self._n_players])
+            )
+            self._orchestrator = NegotiationOrchestrator(
+                state=self._state,
+                reputation=self._reputation,
+                cfg=self._cfg,
+                profiles=_profiles,
+                call_fn=call_fn,
+                learner_slot=learner_id,
+            )
+
+    # ------------------------------------------------------------------
+    # Overrides
+    # ------------------------------------------------------------------
+
+    def _pick_action(
+        self,
+        player: int,
+        obs: dict[str, np.ndarray],
+        legal_actions: list[dict[str, int]],
+    ) -> tuple[dict[str, int], float, float]:
+        if not self._cfg.enabled or player == self._learner_id:
+            return super()._pick_action(player, obs, legal_actions)
+        if not legal_actions:
+            return self._skip_action(), math.nan, math.nan
+        context = self._build_context(player, obs)
+        agent = self._agents[player]
+        try:
+            action, log_prob, value = agent.act_with_meta(obs, legal_actions, context=context)
+            return action, float(log_prob), float(value)
+        except Exception:
+            fallback = RandomAgent().act({}, legal_actions)
+            return fallback, math.nan, math.nan
+
+    def _on_player_turn_start(self, player: int, obs: dict, info: dict) -> None:
+        if not self._cfg.enabled or self._orchestrator is None:
+            return
+        current_turn = self._env.state.turns_elapsed
+        if current_turn <= self._last_negotiation_turn:
+            return
+        self._last_negotiation_turn = current_turn
+        speakers = self._active_non_learner_speakers(obs)
+        if speakers:
+            n_calls = self._orchestrator.run_round(obs, speakers)
+            self.call_count += n_calls
+
+    def _active_non_learner_speakers(self, obs: dict) -> list[int]:
+        """Non-learner, non-eliminated player ids eligible to negotiate."""
+        eliminated = obs.get("eliminated", np.zeros(self._n_players, dtype=np.int32))
+        return [p for p in range(self._n_players) if p != self._learner_id and not eliminated[p]]
+
+    def _after_step(self, player: int, action: dict, pre_obs: dict, new_obs: dict) -> None:
+        if not self._cfg.enabled:
+            return
+        if action.get("action_type") != 2:  # only ATTACK can be betrayal
+            return
+        territory_owner = pre_obs.get("territory_owner", [])
+        target = action.get("param_b", -1)
+        if not (0 <= target < len(territory_owner)):
+            return
+        victim = int(territory_owner[target])
+        if victim == player or not self._state.are_allied(player, victim):
+            return
+        turn = self._env.state.turns_elapsed
+        self._state.declare_war_on(player, victim, turn=turn)
+        self._reputation.record_betrayal(player)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _build_context(self, player: int, obs: dict[str, np.ndarray]) -> DiplomacyContext:
+        territory_owner = obs.get("territory_owner", np.array([], dtype=np.int32))
+        leader: int | None = None
+        if len(territory_owner) > 0:
+            leader = int(self._state.leader(territory_owner))
+        return DiplomacyContext(state=self._state, acting_player=player, leader=leader)
