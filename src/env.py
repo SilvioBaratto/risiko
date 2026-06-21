@@ -95,6 +95,12 @@ class RisikoEnv(gym.Env):
             else fortify_adjacent_only
         )
         self.state: GameState = GameState()
+        # Optional reverse-curriculum start state: when set to
+        # ``{"advantaged_player": id, "opponent_territories": k}`` the board is
+        # seeded near-won for that player (it owns all but ``k`` territories per
+        # opponent, opponents start with 1 army each). Lets a from-scratch agent
+        # actually reach + experience wins, then the trainer anneals ``k`` up.
+        self.curriculum: dict[str, float] | None = None
         self.observation_space = spaces.Dict(
             {
                 "territory_owner": spaces.Box(0, 5, (NUM_TERRITORIES,), dtype=np.int32),
@@ -207,15 +213,74 @@ class RisikoEnv(gym.Env):
     def _setup_board(self) -> None:
         s = self.state
         s.rng.shuffle(s.deck)
-        order = np.arange(NUM_TERRITORIES)
-        s.rng.shuffle(order)
-        for idx, terr in enumerate(order):
-            player = idx % self.n_players
-            s.territory_owner[terr] = player
-            s.armies[terr] = 1
-        self._place_initial_armies()
+        if self.curriculum is not None:
+            self._setup_curriculum_board()
+        else:
+            order = np.arange(NUM_TERRITORIES)
+            s.rng.shuffle(order)
+            for idx, terr in enumerate(order):
+                player = idx % self.n_players
+                s.territory_owner[terr] = player
+                s.armies[terr] = 1
+            self._place_initial_armies()
         self._compute_reinforcements()
         s.phase = PHASE_TRADE if self._has_tradeable_cards(s.current_player) else PHASE_REINFORCE
+
+    def _setup_curriculum_board(self) -> None:
+        """Seed a near-won board so a weak policy can still reach a win.
+
+        ``advantaged_player`` owns all but ``k`` territories per opponent
+        (opponents start with 1 army each); its extra starting armies are piled
+        onto its land so the lead is real, not just territorial.
+        """
+        s = self.state
+        cur = self.curriculum or {}
+        adv = int(cur.get("advantaged_player", 0))
+        if "army_advantage" in cur:
+            self._setup_army_advantage_board(adv, float(cur["army_advantage"]))
+            return
+        k = max(1, int(cur.get("opponent_territories", 1)))
+        order = np.arange(NUM_TERRITORIES)
+        s.rng.shuffle(order)
+        idx = 0
+        for player in range(self.n_players):
+            if player == adv:
+                continue
+            for _ in range(min(k, NUM_TERRITORIES - idx - 1)):
+                terr = int(order[idx])
+                s.territory_owner[terr] = player
+                s.armies[terr] = 1
+                idx += 1
+        for terr in order[idx:]:
+            s.territory_owner[int(terr)] = adv
+            s.armies[int(terr)] = 1
+        # Pile the advantaged player's remaining starting armies on its land.
+        owned = np.where(s.territory_owner == adv)[0]
+        extra = STARTING_ARMIES[self.n_players] - len(owned)
+        if extra > 0 and len(owned) > 0:
+            for terr in s.rng.choice(owned, size=int(extra), replace=True):
+                s.armies[int(terr)] += 1
+
+    def _setup_army_advantage_board(self, adv: int, multiplier: float) -> None:
+        """Even territory split, learner army-rich (multiplier x normal mass).
+
+        Games stay full-size while the learner has a material edge to convert
+        into a win; the trainer anneals the multiplier toward 1.0 (balanced).
+        """
+        s = self.state
+        order = np.arange(NUM_TERRITORIES)
+        s.rng.shuffle(order)
+        for i, terr in enumerate(order):
+            s.territory_owner[int(terr)] = i % self.n_players
+            s.armies[int(terr)] = 1
+        self._place_initial_armies()
+        # Pile extra armies on the advantaged player to reach ``multiplier`` ×.
+        owned = np.where(s.territory_owner == adv)[0]
+        base = STARTING_ARMIES[self.n_players]
+        extra = int(round((multiplier - 1.0) * base))
+        if extra > 0 and len(owned) > 0:
+            for terr in s.rng.choice(owned, size=extra, replace=True):
+                s.armies[int(terr)] += 1
 
     def _place_initial_armies(self) -> None:
         s = self.state
@@ -644,7 +709,27 @@ class RisikoEnv(gym.Env):
                 continue
             if prev["eliminated"][p] == 0 and s.eliminated[p] == 1:
                 reward += cfg.dense_elimination_bonus
+        # Potential-based progress shaping toward winning: reward increases in
+        # territory margin (own lead over the strongest rival). Telescopes to
+        # the win, densifying the gradient toward conquering/eliminating without
+        # distorting the optimal policy.
+        if cfg.dense_progress_weight != 0.0:
+            prev_margin = self._margin_from_owner(prev["territory_owner"], player)
+            curr_margin = self.territory_margin(player)
+            reward += cfg.dense_progress_weight * (curr_margin - prev_margin)
+        # Per-step living penalty: pressure to finish games rather than turtle.
+        reward += cfg.step_penalty
         return reward
+
+    def _margin_from_owner(self, owner: np.ndarray, player: int) -> float:
+        """Territory margin (own lead over strongest rival, [-1,1]) for an owner array."""
+        if owner.size == 0 or player >= self.state.n_players:
+            return 0.0
+        counts = np.bincount(owner, minlength=self.state.n_players)
+        own = int(counts[player])
+        opponents = [int(counts[p]) for p in range(self.state.n_players) if p != player]
+        best_opp = max(opponents) if opponents else 0
+        return (own - best_opp) / NUM_TERRITORIES
 
     def _snapshot(self) -> dict[str, Any]:
         s = self.state

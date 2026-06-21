@@ -656,6 +656,8 @@ class _RewardStub:
     dense_army_ratio: float = 0.005
     dense_elimination_bonus: float = 0.1
     invalid_action_penalty: float = -0.01
+    step_penalty: float = 0.0
+    dense_progress_weight: float = 0.0
     terminal_margin_weight: float = 0.5
 
 

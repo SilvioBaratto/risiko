@@ -67,10 +67,10 @@ class TestRewardConfig:
         assert cfg.sparse_loss == -1.0  # default preserved
 
     def test_total_coefficients_count(self):
-        """There must be exactly 8 coefficient fields."""
+        """There must be exactly 10 coefficient fields."""
         cfg = RewardConfig()
         fields = [f for f in cfg.__dataclass_fields__ if not f.startswith("_")]
-        assert len(fields) == 8
+        assert len(fields) == 10
 
     def test_when_field_mutated_then_frozen_instance_error_raised(self):
         """Mutation must raise FrozenInstanceError specifically."""
