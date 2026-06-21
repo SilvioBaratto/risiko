@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import random
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ from src.models.replay_buffer import RolloutBuffer
 from src.models.utils import get_obs_dim
 from src.multi_agent import GameResult, MultiAgentRunner
 from src.tb_logger import TensorBoardLogger
-from src.utils.constants import ACTION_DIMS
+from src.utils.constants import ACTION_DIMS, NUM_TERRITORIES
 from src.utils.log import get_logger
 from src.utils.seed import set_global_seeds
 from training.early_stopping import EarlyStopper
@@ -107,6 +108,22 @@ class SelfPlayTrainer:
         self._best_metric_value = 0.0
         self._early_stopper = self._build_early_stopper()
         self._buffer: RolloutBuffer | None = None
+        sp = cfg.self_play
+        self._curriculum_mode: str | None = sp.curriculum_mode if sp.curriculum_enabled else None
+        self._curriculum_results: deque[float] = deque(maxlen=sp.curriculum_window)
+        # Difficulty knob: territory mode → opponent_territories (grows to the
+        # even share = full game); army mode → learner army multiplier (shrinks
+        # to 1.0 = balanced full game).
+        if self._curriculum_mode == "army":
+            self._curriculum_val: float = sp.curriculum_army_start
+            _log.info("curriculum ON (army): start multiplier=%.1f → 1.0", self._curriculum_val)
+        elif self._curriculum_mode == "territory":
+            self._curriculum_val = float(sp.curriculum_start)
+            _log.info(
+                "curriculum ON (territory): start opponent_territories=%d → full=%d",
+                int(self._curriculum_val),
+                NUM_TERRITORIES // sp.n_players,
+            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -178,6 +195,7 @@ class SelfPlayTrainer:
             self._set_rollout_seed()
             result = self._run_episode(buffer)
             last_result = result
+            self._maybe_advance_curriculum(result)
             self._logger.log_game_result(result, player_id=_LEARNER_ID, episode=self._episode)
             updated = False
             if len(buffer) >= buffer.capacity:
@@ -253,9 +271,34 @@ class SelfPlayTrainer:
 
     def _build_trainer(self) -> tuple[PPOTrainer, PPOAgent]:
         net = self._build_net()
-        trainer = PPOTrainer(net, self._cfg.ppo)
+        reference_net = self._build_reference_net()
+        trainer = PPOTrainer(net, self._cfg.ppo, reference_net=reference_net)
         agent = PPOAgent(net, device=self._device)
         return trainer, agent
+
+    def _build_reference_net(self) -> ActorCritic | None:
+        """Load a frozen BC policy to anchor PPO toward (RLHF-style).
+
+        Enabled when ``ppo.kl_ref_coef > 0`` and ``bc.output_path`` exists.
+        """
+        if self._cfg.ppo.kl_ref_coef <= 0:
+            return None
+        path = Path(self._cfg.bc.output_path)
+        if not path.exists():
+            _log.warning("kl_ref_coef>0 but BC reference %s missing — no anchor", path)
+            return None
+        payload = torch.load(path, weights_only=False)
+        ref = self._build_net()
+        ref.load_state_dict(payload["trainer_state"]["model"])
+        ref.eval()
+        for p in ref.parameters():
+            p.requires_grad = False
+        _log.info(
+            "KL-ref anchor: loaded BC reference %s (coef=%g)",
+            path,
+            self._cfg.ppo.kl_ref_coef,
+        )
+        return ref
 
     def _build_net(self) -> ActorCritic:
         return ActorCritic(
@@ -312,6 +355,7 @@ class SelfPlayTrainer:
 
     def _run_episode(self, buffer: RolloutBuffer) -> GameResult:
         """Play one episode and append learner transitions to *buffer*."""
+        self._env.curriculum = self._curriculum_spec()
         agents = self._build_agents()
         runner = MultiAgentRunner(
             self._env,
@@ -322,6 +366,52 @@ class SelfPlayTrainer:
         result = runner.run_game(seed=self._cfg.seed + self._episode)
         self._buffer_learner_transitions(result, buffer)
         return result
+
+    def _curriculum_spec(self) -> dict[str, float] | None:
+        """Env curriculum dict for the current stage, or None when off."""
+        if self._curriculum_mode == "territory":
+            return {
+                "advantaged_player": _LEARNER_ID,
+                "opponent_territories": int(self._curriculum_val),
+            }
+        if self._curriculum_mode == "army":
+            return {"advantaged_player": _LEARNER_ID, "army_advantage": float(self._curriculum_val)}
+        return None
+
+    def _maybe_advance_curriculum(self, result: GameResult) -> None:
+        """Promote to a harder curriculum stage once the learner reliably wins."""
+        if self._curriculum_mode is None:
+            return
+        self._curriculum_results.append(1.0 if result.winner == _LEARNER_ID else 0.0)
+        sp = self._cfg.self_play
+        if len(self._curriculum_results) < sp.curriculum_window:
+            return
+        win_rate = sum(self._curriculum_results) / len(self._curriculum_results)
+        if win_rate < sp.curriculum_promote_threshold:
+            return
+        self._curriculum_results.clear()
+        if self._curriculum_mode == "territory":
+            self._curriculum_val += sp.curriculum_step
+            if self._curriculum_val >= NUM_TERRITORIES // sp.n_players:
+                self._curriculum_mode = None
+                _log.info("curriculum: win_rate=%.2f → full-game difficulty (off)", win_rate)
+            else:
+                _log.info(
+                    "curriculum: win_rate=%.2f → opponent_territories=%d",
+                    win_rate,
+                    int(self._curriculum_val),
+                )
+        else:  # army
+            self._curriculum_val -= sp.curriculum_army_step
+            if self._curriculum_val <= 1.0:
+                self._curriculum_mode = None
+                _log.info("curriculum: win_rate=%.2f → balanced full game (off)", win_rate)
+            else:
+                _log.info(
+                    "curriculum: win_rate=%.2f → army_multiplier=%.1f",
+                    win_rate,
+                    self._curriculum_val,
+                )
 
     def _buffer_learner_transitions(self, result: GameResult, buffer: RolloutBuffer) -> None:
         """Copy learner transitions straight from trajectory into the rollout buffer.

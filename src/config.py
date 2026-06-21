@@ -97,6 +97,11 @@ class PPOConfig:
     # Essential for stability: raw advantages (terminal-margin + dense + GAE)
     # otherwise produce unbounded policy-gradient steps (approx_kl ~1).
     normalize_advantage: bool = True
+    # Coefficient for an anchor penalty pulling the policy toward a frozen
+    # reference (the BC clone), RLHF-style. > 0 enables fine-tuning a sharp
+    # BC-warm-started policy without the divergence that plain PPO causes
+    # (the reference is loaded from ``BCConfig.output_path``). 0.0 disables.
+    kl_ref_coef: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -118,6 +123,20 @@ class SelfPlayConfig:
     n_players: int = 2
     llm_profiles_path: str | None = None
     llm_model: str | None = None  # uniform model override for all LLM opponents
+    # Reverse curriculum: seed near-won boards so a from-scratch learner reaches
+    # wins, then anneal difficulty up. Disabled by default.
+    curriculum_enabled: bool = False
+    # "territory": learner owns all but k territories per opponent, k grows.
+    # "army": balanced territories but the learner starts army-rich (multiplier),
+    #         annealed toward 1.0 — teaches converting a material edge into a win,
+    #         which transfers to full games (territory mode tops out near-won).
+    curriculum_mode: str = "territory"
+    curriculum_start: int = 2  # (territory) opponent territories at the easiest stage
+    curriculum_step: int = 2  # (territory) territories added per opponent on promotion
+    curriculum_army_start: float = 4.0  # (army) learner army multiplier at the easiest stage
+    curriculum_army_step: float = 0.5  # (army) multiplier reduction per promotion (toward 1.0)
+    curriculum_promote_threshold: float = 0.7  # learner win-rate to advance a stage
+    curriculum_window: int = 50  # games over which the stage win-rate is measured
 
 
 @dataclass(frozen=True)
