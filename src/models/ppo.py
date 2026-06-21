@@ -19,16 +19,29 @@ _log = get_logger("ppo")
 class PPOTrainer:
     """PPO clipped-surrogate loss trainer."""
 
-    def __init__(self, net: ActorCritic, config: PPOConfig):
+    def __init__(
+        self,
+        net: ActorCritic,
+        config: PPOConfig,
+        reference_net: ActorCritic | None = None,
+    ):
         """Initialize trainer with network and hyperparameters.
 
         Args:
             net: Actor-Critic network to train.
             config: PPO hyperparameters.
+            reference_net: Optional frozen policy (e.g. the BC clone) to anchor
+                the learner toward via ``config.kl_ref_coef`` (RLHF-style). Kept
+                in eval mode with grads off; only its log-probs are used.
         """
         self.net = net
         self.config = config
         self.optimizer = torch.optim.Adam(net.parameters(), lr=config.lr)
+        self.reference_net = reference_net
+        if reference_net is not None:
+            reference_net.eval()
+            for p in reference_net.parameters():
+                p.requires_grad = False
 
     def save_checkpoint(self) -> dict[str, Any]:
         """Return trainer state for checkpointing."""
@@ -59,6 +72,7 @@ class PPOTrainer:
             "approx_kl": 0.0,
             "clip_fraction": 0.0,
             "explained_variance": 0.0,
+            "kl_ref": 0.0,
         }
 
         target_kl = getattr(self.config, "target_kl", 0.0)
@@ -162,10 +176,24 @@ class PPOTrainer:
 
         entropy_loss = -entropy.mean()
 
+        kl_ref = 0.0
+        ref_penalty = torch.zeros((), device=new_log_probs.device)
+        if self.reference_net is not None and self.config.kl_ref_coef > 0:
+            with torch.no_grad():
+                _, ref_log_probs, _, _ = self.reference_net.get_action_and_value(
+                    obs, action=actions, action_masks=action_masks
+                )
+            # Anchor toward the reference (BC) policy on the chosen actions:
+            # squared log-prob deviation — always ≥0, stable, pulls the policy
+            # back when it drifts off the competent BC start.
+            ref_penalty = (new_log_probs - ref_log_probs).pow(2).mean()
+            kl_ref = ref_penalty.item()
+
         total_loss = (
             policy_loss
             + self.config.value_loss_coef * value_loss
             + self.config.entropy_coef * entropy_loss
+            + self.config.kl_ref_coef * ref_penalty
         )
 
         self.optimizer.zero_grad()
@@ -189,6 +217,7 @@ class PPOTrainer:
             "approx_kl": approx_kl,
             "clip_fraction": clip_fraction,
             "explained_variance": explained_variance,
+            "kl_ref": kl_ref,
         }
 
     def _explained_variance(self, returns: torch.Tensor, values: torch.Tensor) -> float:
