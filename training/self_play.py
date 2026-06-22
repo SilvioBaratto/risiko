@@ -7,7 +7,7 @@ import random
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -21,6 +21,7 @@ from src.agents.random_agent import RandomAgent
 from src.config import TrainingConfig
 from src.env import RisikoEnv
 from src.models.actor_critic import ActorCritic
+from src.models.graph_actor_critic import GraphSAGEActorCritic
 from src.models.ppo import PPOTrainer
 from src.models.replay_buffer import RolloutBuffer
 from src.models.utils import get_obs_dim
@@ -301,12 +302,17 @@ class SelfPlayTrainer:
         return ref
 
     def _build_net(self) -> ActorCritic:
-        return ActorCritic(
+        # GraphSAGEActorCritic is interface-compatible (same forward /
+        # get_action_and_value / action_dims), so it stands in for ActorCritic.
+        arch = getattr(self._cfg.network, "arch", "mlp")
+        net_cls = GraphSAGEActorCritic if arch == "graphsage" else ActorCritic
+        net = net_cls(
             obs_dim=get_obs_dim(),
             hidden_size=self._cfg.network.hidden_sizes[0],
             num_layers=len(self._cfg.network.hidden_sizes),
             action_dims=ACTION_DIMS,
         ).to(self._device)
+        return cast(ActorCritic, net)
 
     def _build_opponent_net(self) -> ActorCritic:
         net = self._build_net()

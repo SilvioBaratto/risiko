@@ -110,6 +110,10 @@ class NetworkConfig:
 
     hidden_sizes: tuple[int, ...] = (256, 256)
     activation: str = "tanh"
+    # "mlp" (flat trunk) or "graphsage" (GraphSAGE over the territory adjacency
+    # graph — board-structured trunk, same action heads). len(hidden_sizes) sets
+    # the number of SAGE layers in graphsage mode.
+    arch: str = "mlp"
 
 
 @dataclass(frozen=True)
