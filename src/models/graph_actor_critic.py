@@ -1,16 +1,21 @@
-"""GraphSAGE actor-critic: a graph-structured trunk over the territory graph.
+"""GraphSAGE actor-critic with per-node action heads over the territory graph.
 
 Drop-in replacement for ``ActorCritic`` — identical constructor signature and
 ``forward`` / ``get_action_and_value`` interface (takes the flat 137-dim obs,
 returns the same per-head logits dict + value), so PPOTrainer, the rollout
 buffer, action masking, and checkpointing are unchanged.
 
-Why: the flat MLP cannot see that Risiko is a graph. This trunk un-flattens the
-obs into per-territory node features, runs GraphSAGE message passing over the
-fixed ``ADJACENCY`` graph (so army/threat info propagates along borders), pools
-to a board embedding, concatenates the global scalars, and feeds the existing
-factorized policy heads + value head. Permutation-aware over territories →
-better sample efficiency and board-wide tactical reasoning.
+Why a GNN: the flat MLP can't see that Risiko is a graph. This trunk un-flattens
+the obs into per-territory node features, runs GraphSAGE message passing over the
+fixed ``ADJACENCY`` graph, and — crucially — selects territories with **per-node
+action heads**: the territory-valued logits of ``param_a`` (attack source /
+reinforce / fortify src / capture-move) and ``param_b`` (defender / fortify dst)
+come directly from each territory's own node embedding, not from a pooled global
+vector. (Pooling-then-flat-head, the earlier version, discarded exactly the
+spatial signal those heads need — it couldn't even win the easiest curriculum
+stage.) Count/dice logits (indices 42..200) and the non-spatial heads
+(action_type, param_c, param_d, value) still come from the pooled board+global
+embedding.
 
 Flat-obs layout (see src/models/utils.py ``_CONCAT_ORDER``):
     [0:42]   territory_owner / 5.0
@@ -25,7 +30,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from src.models.actor_critic import PolicyHeads, _build_distributions
+from src.models.actor_critic import _build_distributions
 from src.utils.constants import ADJACENCY, CONTINENTS, NUM_TERRITORIES
 
 # Flat-obs slice boundaries (tied to utils._CONCAT_ORDER).
@@ -35,6 +40,8 @@ _GLOBAL_START = 2 * NUM_TERRITORIES  # everything after armies is global scalars
 _CURPLAYER_SLICE = (2 * NUM_TERRITORIES + 5, 2 * NUM_TERRITORIES + 11)  # one-hot(6)
 _MAX_PLAYERS = 6
 _NODE_FEAT_DIM = _MAX_PLAYERS + 1 + 1 + len(CONTINENTS)  # owner + armies + is_mine + continent
+# Heads whose first NUM_TERRITORIES logits select a territory → score per-node.
+_NODE_HEADS = ("param_a", "param_b")
 
 
 def _row_normalized_adjacency() -> torch.Tensor:
@@ -67,13 +74,31 @@ class _SAGELayer(nn.Module):
         self.act = nn.ReLU()
 
     def forward(self, h: torch.Tensor, adj_norm: torch.Tensor) -> torch.Tensor:
-        # h: (B, N, in_dim); adj_norm: (N, N) → neighbor mean per node.
-        neigh = torch.einsum("ij,bjf->bif", adj_norm, h)
+        neigh = torch.einsum("ij,bjf->bif", adj_norm, h)  # (B, N, F) neighbor mean
         return self.act(self.self_lin(h) + self.neigh_lin(neigh))
 
 
+class _NodeAwareHead(nn.Module):
+    """Logits where the first ``n_nodes`` come per-node, the rest from global.
+
+    Used for territory-or-count params: a node's territory logit is scored from
+    its own embedding (spatial); count/dice logits come from the board+global
+    embedding.
+    """
+
+    def __init__(self, hidden: int, n_nodes: int, total_dim: int):
+        super().__init__()
+        self.node_score = nn.Linear(hidden, 1)
+        self.rest = nn.Linear(hidden, total_dim - n_nodes)
+
+    def forward(self, node_emb: torch.Tensor, global_emb: torch.Tensor) -> torch.Tensor:
+        node_logits = self.node_score(node_emb).squeeze(-1)  # (B, N)
+        rest_logits = self.rest(global_emb)  # (B, total - N)
+        return torch.cat([node_logits, rest_logits], dim=-1)
+
+
 class GraphSAGEActorCritic(nn.Module):
-    """GraphSAGE-trunk actor-critic; interface-compatible with ``ActorCritic``."""
+    """GraphSAGE trunk + per-node action heads; interface-compatible with ActorCritic."""
 
     def __init__(
         self,
@@ -99,7 +124,20 @@ class GraphSAGEActorCritic(nn.Module):
         # pooled board (mean+max = 2*hidden) + globals (hidden) → joint hidden
         self.joint = nn.Sequential(nn.Linear(3 * hidden_size, hidden_size), nn.ReLU())
 
-        self.policy = PolicyHeads(hidden_size, action_dims)
+        self.global_heads = nn.ModuleDict(
+            {
+                name: nn.Linear(hidden_size, dim)
+                for name, dim in action_dims.items()
+                if name not in _NODE_HEADS
+            }
+        )
+        self.node_heads = nn.ModuleDict(
+            {
+                name: _NodeAwareHead(hidden_size, NUM_TERRITORIES, action_dims[name])
+                for name in _NODE_HEADS
+                if name in action_dims
+            }
+        )
         self.value = nn.Linear(hidden_size, 1)
 
     def _node_features(self, obs: torch.Tensor) -> torch.Tensor:
@@ -123,7 +161,11 @@ class GraphSAGEActorCritic(nn.Module):
         pooled = torch.cat([h.mean(dim=1), h.amax(dim=1)], dim=-1)  # (B, 2H)
         g = self.global_encoder(obs[:, _GLOBAL_START:])  # (B, H)
         joint = self.joint(torch.cat([pooled, g], dim=-1))  # (B, H)
-        return self.policy(joint), self.value(joint)
+
+        logits = {name: head(joint) for name, head in self.global_heads.items()}
+        for name, head in self.node_heads.items():
+            logits[name] = head(h, joint)
+        return logits, self.value(joint)
 
     def get_action_and_value(
         self,
