@@ -57,7 +57,17 @@ def _numpy_safe_globals() -> list[Any]:
         allow.append(reconstruct)
     dtypes_mod = getattr(np, "dtypes", None)
     if dtypes_mod is not None:
-        for name in ("UInt32DType", "Int64DType", "Float64DType"):
+        for name in (
+            "UInt8DType",
+            "Int8DType",
+            "Int16DType",
+            "UInt32DType",
+            "Int32DType",
+            "Int64DType",
+            "Float32DType",
+            "Float64DType",
+            "BoolDType",
+        ):
             klass = getattr(dtypes_mod, name, None)
             if klass is not None:
                 allow.append(klass)
