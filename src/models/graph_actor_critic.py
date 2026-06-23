@@ -71,11 +71,12 @@ class _SAGELayer(nn.Module):
         super().__init__()
         self.self_lin = nn.Linear(in_dim, out_dim)
         self.neigh_lin = nn.Linear(in_dim, out_dim)
+        self.norm = nn.LayerNorm(out_dim)  # stabilizes GNN optimization
         self.act = nn.ReLU()
 
     def forward(self, h: torch.Tensor, adj_norm: torch.Tensor) -> torch.Tensor:
         neigh = torch.einsum("ij,bjf->bif", adj_norm, h)  # (B, N, F) neighbor mean
-        return self.act(self.self_lin(h) + self.neigh_lin(neigh))
+        return self.act(self.norm(self.self_lin(h) + self.neigh_lin(neigh)))
 
 
 class _NodeAwareHead(nn.Module):
@@ -115,14 +116,20 @@ class GraphSAGEActorCritic(nn.Module):
         self.register_buffer("_adj_norm", _row_normalized_adjacency())
         self.register_buffer("_continent", _continent_one_hot())
 
-        self.node_encoder = nn.Sequential(nn.Linear(_NODE_FEAT_DIM, hidden_size), nn.ReLU())
+        self.node_encoder = nn.Sequential(
+            nn.Linear(_NODE_FEAT_DIM, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU()
+        )
         self.sage_layers = nn.ModuleList(
             _SAGELayer(hidden_size, hidden_size) for _ in range(max(1, num_layers))
         )
         n_global = obs_dim - _GLOBAL_START
-        self.global_encoder = nn.Sequential(nn.Linear(n_global, hidden_size), nn.ReLU())
+        self.global_encoder = nn.Sequential(
+            nn.Linear(n_global, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU()
+        )
         # pooled board (mean+max = 2*hidden) + globals (hidden) → joint hidden
-        self.joint = nn.Sequential(nn.Linear(3 * hidden_size, hidden_size), nn.ReLU())
+        self.joint = nn.Sequential(
+            nn.Linear(3 * hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU()
+        )
 
         self.global_heads = nn.ModuleDict(
             {
