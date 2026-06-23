@@ -352,6 +352,47 @@ def social_eval(
     typer.echo(f"Total negotiation calls: {result.total_negotiation_calls}")
 
 
+@app.command()
+def analyze(
+    checkpoint: Annotated[
+        str, typer.Option("--checkpoint", help="Agent checkpoint path or 'random'")
+    ] = "random",
+    opponent: Annotated[str, typer.Option("--opponent", help="Opponent agent spec")] = "random",
+    n_games: Annotated[int, typer.Option("--n-games", help="Games to analyze")] = 50,
+    n_players: Annotated[int, typer.Option("--n-players", help="Total players")] = 2,
+    seed: Annotated[int, typer.Option("--seed", help="Base RNG seed")] = 42,
+    max_turns: Annotated[int, typer.Option("--max-turns", help="Turn cap per game")] = 500,
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Write JSON report")
+    ] = None,
+):
+    """Analyze a trained agent's learned strategy (continent priority, aggression, cards)."""
+    setup_logging()
+    import json  # noqa: PLC0415
+
+    from src.env import RisikoEnv  # noqa: PLC0415
+    from src.multi_agent import MultiAgentRunner  # noqa: PLC0415
+    from training.strategy_analysis import StrategyAnalyzer  # noqa: PLC0415
+
+    learner = load_agent(checkpoint)
+    agents = [learner] + [load_agent(opponent, seed=seed + i) for i in range(1, n_players)]
+
+    typer.echo(f"analyze: {checkpoint} vs {opponent} over {n_games} games ...")
+    results = []
+    for g in range(n_games):
+        env = RisikoEnv(n_players=n_players)
+        results.append(MultiAgentRunner(env, agents, max_turns=max_turns).run_game(seed=seed + g))
+
+    resolved = sum(1 for r in results if r.winner is not None)
+    wins = sum(1 for r in results if r.winner == 0)
+    report = StrategyAnalyzer(results, learner_id=0).report()
+    typer.echo(f"\ngames={n_games} resolved={resolved} learner_wins={wins}")
+    typer.echo(json.dumps(report, indent=2, default=float))
+    if output is not None:
+        output.write_text(json.dumps(report, indent=2, default=float))
+        typer.echo(f"\nreport saved to {output}")
+
+
 def _build_pool(profiles: Path | None, n_players: int) -> list[Any]:
     if profiles is not None:
         from risiko_rl.agent_loader import load_llm_pool  # noqa: PLC0415
