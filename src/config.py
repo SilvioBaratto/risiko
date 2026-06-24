@@ -141,6 +141,13 @@ class SelfPlayConfig:
     curriculum_army_step: float = 0.5  # (army) multiplier reduction per promotion (toward 1.0)
     curriculum_promote_threshold: float = 0.7  # learner win-rate to advance a stage
     curriculum_window: int = 50  # games over which the stage win-rate is measured
+    # Fraction of episodes that use a balanced full-game start instead of the
+    # curriculum near-won start. The curriculum teaches closeouts but only ever
+    # shows near-won states, so the policy never learns full-game play and
+    # fails to generalize (0% vs random in full games). Mixing in balanced
+    # episodes trains on the eval distribution. These episodes do not count
+    # toward curriculum-stage promotion.
+    curriculum_balanced_fraction: float = 0.0
 
 
 @dataclass(frozen=True)

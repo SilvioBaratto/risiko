@@ -112,6 +112,7 @@ class SelfPlayTrainer:
         sp = cfg.self_play
         self._curriculum_mode: str | None = sp.curriculum_mode if sp.curriculum_enabled else None
         self._curriculum_results: deque[float] = deque(maxlen=sp.curriculum_window)
+        self._last_balanced: bool = False  # was the last episode a balanced (non-curriculum) one
         # Difficulty knob: territory mode → opponent_territories (grows to the
         # even share = full game); army mode → learner army multiplier (shrinks
         # to 1.0 = balanced full game).
@@ -361,7 +362,14 @@ class SelfPlayTrainer:
 
     def _run_episode(self, buffer: RolloutBuffer) -> GameResult:
         """Play one episode and append learner transitions to *buffer*."""
-        self._env.curriculum = self._curriculum_spec()
+        # Mix in balanced full-game episodes so the policy trains on the eval
+        # distribution (not only near-won curriculum states). These episodes are
+        # flagged so they don't count toward curriculum-stage promotion.
+        frac = self._cfg.self_play.curriculum_balanced_fraction
+        self._last_balanced = (
+            self._curriculum_mode is not None and frac > 0 and self._rng.random() < frac
+        )
+        self._env.curriculum = None if self._last_balanced else self._curriculum_spec()
         agents = self._build_agents()
         runner = MultiAgentRunner(
             self._env,
@@ -386,8 +394,8 @@ class SelfPlayTrainer:
 
     def _maybe_advance_curriculum(self, result: GameResult) -> None:
         """Promote to a harder curriculum stage once the learner reliably wins."""
-        if self._curriculum_mode is None:
-            return
+        if self._curriculum_mode is None or self._last_balanced:
+            return  # balanced full-game episodes don't gate stage promotion
         self._curriculum_results.append(1.0 if result.winner == _LEARNER_ID else 0.0)
         sp = self._cfg.self_play
         if len(self._curriculum_results) < sp.curriculum_window:
