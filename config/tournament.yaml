@@ -1,0 +1,45 @@
+# Tournament configuration for the LLM-only strategy-discovery mode.
+#
+# This file is validated by tests/test_tournament_config.py via yaml.safe_load.
+# It must NOT be loaded through src.config.load_config (no TrainingConfig).
+#
+# Strategies are referenced by name slug — the authoritative definitions live
+# in src/agents/strategies.py::STRATEGY_CATALOG (DRY: no redefinition here).
+
+# ── Identity & reproducibility ──────────────────────────────────────────────
+name: llm_strategy_tournament
+seed: 42
+
+# ── Scale & concurrency ──────────────────────────────────────────────────────
+# Start with a 30-game pilot to validate the pipeline; scale to 1000+ games
+# for statistically significant strategy win-rates (Wilson CI).
+n_games: 30
+max_concurrency: 6   # one concurrent game per model seat (I/O-bound LLM calls)
+
+# ── Diplomacy ────────────────────────────────────────────────────────────────
+n_rounds: 2  # negotiation rounds per diplomacy cycle (spec: 2–3)
+
+# ── Strategy catalog reference (by module path, not by value) ────────────────
+strategy_catalog: src.agents.strategies
+
+# ── Strategy slugs (must match STRATEGY_CATALOG names exactly) ───────────────
+strategies:
+  - australia_lock
+  - south_america_lock
+  - aggressive_blitz
+  - turtle_defensive
+  - card_cycle_hunter
+  - diplomat_coalition
+
+# ── 6-model roster (Ollama cloud, :cloud suffix convention) ─────────────────
+models:
+  - glm-5.2:cloud
+  - minimax-m3:cloud
+  - glm-5.1:cloud
+  - kimi-k2.6:cloud
+  - deepseek-v4-flash:cloud
+  - qwen3.5:cloud
+
+# ── Sampling parameters (applied uniformly; per-player overrides in Cycle 8) ─
+temperature: 0.7
+top_p: 0.9

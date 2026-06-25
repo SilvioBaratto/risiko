@@ -362,9 +362,7 @@ def analyze(
     n_players: Annotated[int, typer.Option("--n-players", help="Total players")] = 2,
     seed: Annotated[int, typer.Option("--seed", help="Base RNG seed")] = 42,
     max_turns: Annotated[int, typer.Option("--max-turns", help="Turn cap per game")] = 500,
-    output: Annotated[
-        Path | None, typer.Option("--output", "-o", help="Write JSON report")
-    ] = None,
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Write JSON report")] = None,
 ):
     """Analyze a trained agent's learned strategy (continent priority, aggression, cards)."""
     setup_logging()

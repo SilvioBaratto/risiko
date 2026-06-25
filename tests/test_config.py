@@ -307,6 +307,7 @@ class TestModuleExports:
             "SelfPlayConfig",
             "EarlyStopConfig",
             "TrainingConfig",
+            "TRAINING_YAMLS",
             "load_config",
             "merge_cli_overrides",
             "resolve_device",

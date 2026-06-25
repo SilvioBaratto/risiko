@@ -25,10 +25,22 @@ __all__ = [
     "SelfPlayConfig",
     "EarlyStopConfig",
     "TrainingConfig",
+    "TRAINING_YAMLS",
     "load_config",
     "merge_cli_overrides",
     "resolve_device",
 ]
+
+# Canonical list of YAML files that are loaded via load_config → TrainingConfig.
+# config/tournament.yaml is intentionally absent — it is a raw-dict tournament
+# schedule, not a TrainingConfig, and must never pass through load_config.
+TRAINING_YAMLS: tuple[str, ...] = (
+    "config/default.yaml",
+    "config/llm_6p.yaml",
+    "config/random_6p_pretrain.yaml",
+    "config/random_2p_pretrain.yaml",
+    "config/bc_pretrain.yaml",
+)
 
 T = TypeVar("T")
 
