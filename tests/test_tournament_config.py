@@ -15,7 +15,7 @@ CONFIG_PATH = pathlib.Path("config/tournament.yaml")
 REQUIRED_ROSTER = frozenset(
     {
         "glm-5.2:cloud",
-        "minimax-m3:cloud",
+        "gemma4:31b-cloud",  # replaced minimax-m3 (too slow on cloud → timed out to random)
         "glm-5.1:cloud",
         "kimi-k2.6:cloud",
         "deepseek-v4-flash:cloud",
@@ -57,10 +57,16 @@ def test_when_models_key_read_then_equals_required_roster(cfg):
 # ── Diplomacy rounds ──────────────────────────────────────────────────────────
 
 
-def test_when_n_rounds_read_then_within_2_to_3_inclusive(cfg):
-    """n_rounds must satisfy 2 <= n_rounds <= 3 (diplomacy cycle spec)."""
-    n = cfg["n_rounds"]
-    assert 2 <= n <= 3
+def test_when_n_rounds_read_then_at_least_one(cfg):
+    """n_rounds must be >= 1. Reduced from 2 to 1 for throughput; combined with
+    negotiation_cadence > 1 this cuts the dominant per-turn diplomacy call cost.
+    """
+    assert cfg["n_rounds"] >= 1
+
+
+def test_when_negotiation_cadence_read_then_at_least_one(cfg):
+    """negotiation_cadence must be >= 1 (negotiate every Nth player-turn)."""
+    assert cfg["negotiation_cadence"] >= 1
 
 
 # ── Scale / concurrency ───────────────────────────────────────────────────────

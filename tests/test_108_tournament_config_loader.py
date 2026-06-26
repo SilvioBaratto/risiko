@@ -27,7 +27,7 @@ _VALID_STRATEGIES = [
 
 _VALID_MODELS = [
     "glm-5.2:cloud",
-    "minimax-m3:cloud",
+    "gemma4:31b-cloud",
     "glm-5.1:cloud",
     "kimi-k2.6:cloud",
     "deepseek-v4-flash:cloud",
@@ -64,12 +64,20 @@ def test_when_tournament_config_loaded_then_max_concurrency_equals_6():
     assert cfg.max_concurrency == 6
 
 
-def test_when_tournament_config_loaded_then_n_rounds_equals_2():
-    """Criterion: n_rounds == 2 in the parsed TournamentConfig."""
+def test_when_tournament_config_loaded_then_n_rounds_is_at_least_one():
+    """n_rounds >= 1 (reduced from 2 to 1 for throughput, paired with cadence)."""
     from training.tournament import load_tournament_config
 
     cfg = load_tournament_config(CONFIG_PATH)
-    assert cfg.n_rounds == 2
+    assert cfg.n_rounds >= 1
+
+
+def test_when_tournament_config_loaded_then_negotiation_cadence_is_at_least_one():
+    """negotiation_cadence >= 1 (negotiate every Nth player-turn)."""
+    from training.tournament import load_tournament_config
+
+    cfg = load_tournament_config(CONFIG_PATH)
+    assert cfg.negotiation_cadence >= 1
 
 
 def test_when_tournament_config_loaded_then_strategies_has_6_entries():

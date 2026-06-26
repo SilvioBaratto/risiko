@@ -374,15 +374,15 @@ class TestBuildNegotiationCallFn:
         player_configs = self._player_configs(tmp_path)
 
         with patch(
-            "src.agents.ollama_client.call_ollama_for_action_index",
+            "src.agents.ollama_client.call_ollama_for_negotiation",
             side_effect=RuntimeError("simulated timeout"),
         ):
             call_fn = build_negotiation_call_fn(0, player_configs, "http://localhost:11434/v1")
-            if callable(call_fn):
-                result = call_fn()
-                assert result is None, (
-                    f"Expected None on LLM failure (fallback contract), got {result!r}"
-                )
+            assert callable(call_fn)
+            result = call_fn(0, "negotiate")
+            assert result is None, (
+                f"Expected None on LLM failure (fallback contract), got {result!r}"
+            )
 
 
 # ────────────────────────────────────────────────────────────────────────────
