@@ -227,7 +227,3 @@ data/bc/
 # pytest tmp_path basetemp + torch inductor cache (machine-local junk)
 pytest-of-*/
 torchinductor_*/
-models/
-*.pt
-*.ckpt
-*.pth
