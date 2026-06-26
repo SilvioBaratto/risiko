@@ -33,6 +33,14 @@ max_turns: 200
 # move so it cannot stall a game. (minimax-m3 was dropped for taking ~74s/action.)
 action_timeout: 45
 
+# ── Draw resolution ──────────────────────────────────────────────────────────
+# 6-player games rarely eliminate down to one survivor within max_turns, so
+# "territory" scores the board leader (most territories, tie-break armies) as the
+# winner at the cap — giving the leaderboard signal. True elimination wins are
+# always recorded as such; the ledger's `resolution` field distinguishes them.
+# Set "none" to record uncapped draws as winner=None instead.
+draw_resolution: territory
+
 # ── Strategy catalog reference (by module path, not by value) ────────────────
 strategy_catalog: src.agents.strategies
 
