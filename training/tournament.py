@@ -69,6 +69,12 @@ class TournamentConfig:
     # Per-action LLM timeout (s). A model exceeding this falls back to a random
     # legal move, so a slow/verbose model can't stall a whole game.
     action_timeout: float = 120.0
+    # How to score a game with no sole survivor at the turn cap. "territory":
+    # the board leader (most territories, tie-break by armies) is the winner, so
+    # the leaderboard has signal even when 6p games don't eliminate to 1 within
+    # max_turns. "none": record a draw (winner=None). True elimination victories
+    # are always recorded as wins regardless of this setting.
+    draw_resolution: str = "territory"
 
 
 @dataclass(frozen=True)
@@ -96,6 +102,10 @@ class LedgerRecord:
     assignment: dict[str, str]
     card_trade_turns: list[int]
     llm_call_count: int
+    # How the winner was decided: "elimination" (sole survivor), "territory_cap"
+    # (board leader at max_turns), or "draw" (no winner). Lets analysis separate
+    # decisive wins from cap-resolved ones. Defaulted for old-ledger from_json.
+    resolution: str = "draw"
 
     def to_json_line(self) -> str:
         """Serialise to a single JSON line with no trailing newline."""
@@ -157,6 +167,7 @@ def _build_config(raw: dict[str, Any]) -> TournamentConfig:
         max_turns=int(raw.get("max_turns", _MAX_TURNS)),
         negotiation_cadence=int(raw.get("negotiation_cadence", 1)),
         action_timeout=float(raw.get("action_timeout", 120.0)),
+        draw_resolution=str(raw.get("draw_resolution", "territory")),
     )
 
 
@@ -512,6 +523,31 @@ def build_negotiation_call_fn(
     return fn
 
 
+def _territory_leader(state: Any) -> int | None:
+    """Seat leading the board at the turn cap, or None if no one holds territory.
+
+    Ranks non-eliminated players by territory count, tie-broken by total armies
+    then lowest seat index. Used to resolve a winner when a game reaches
+    max_turns without a sole survivor (``draw_resolution="territory"``).
+    """
+    owner = np.asarray(state.territory_owner)
+    armies = np.asarray(state.armies)
+    eliminated = np.asarray(state.eliminated)
+    best: int | None = None
+    best_key = (-1, -1)
+    for p in range(int(state.n_players)):
+        if eliminated[p]:
+            continue
+        terr = int(np.sum(owner == p))
+        if terr == 0:
+            continue
+        key = (terr, int(np.sum(armies[owner == p])))
+        if key > best_key:
+            best_key = key
+            best = p
+    return best
+
+
 def run_game(
     plan: GamePlan,
     config: TournamentConfig,
@@ -582,6 +618,12 @@ def _play_one_game(
     total_llm_calls = action_calls + runner.call_count
 
     winner = result.winner
+    resolution = "elimination" if winner is not None else "draw"
+    if winner is None and config.draw_resolution == "territory":
+        winner = _territory_leader(env.state)
+        if winner is not None:
+            resolution = "territory_cap"
+
     winner_strategy: str | None = None
     winner_model: str | None = None
     if winner is not None:
@@ -604,6 +646,7 @@ def _play_one_game(
         assignment=dict(plan.assignment),
         card_trade_turns=result.card_trade_turns,
         llm_call_count=total_llm_calls,
+        resolution=resolution,
     )
 
 
