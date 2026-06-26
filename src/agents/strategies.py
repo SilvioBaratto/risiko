@@ -142,8 +142,10 @@ CATALOG_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGY_CATALOG}
 # ---------------------------------------------------------------------------
 
 
-def compose_strategy_hint(strategy: Strategy) -> str:
+def compose_strategy_hint(strategy: Strategy | str) -> str:
     """Return the full strategy hint: board play joined with posture directive."""
+    if isinstance(strategy, str):
+        strategy = CATALOG_BY_NAME[strategy]
     return f"{strategy.strategy_hint} {strategy.posture_directive}"
 
 

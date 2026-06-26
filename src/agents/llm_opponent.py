@@ -10,9 +10,9 @@ import httpx
 import numpy as np
 import torch
 
+import src.agents.ollama_client as _ollama_client
 from src.agents.base import Agent
 from src.agents.diplomacy import DiplomacyNote
-from src.agents.ollama_client import call_ollama_for_action_index
 from src.agents.player_config import DEFAULT_MODEL, PlayerConfig
 from src.agents.random_agent import RandomAgent
 from src.utils.log import get_logger
@@ -57,6 +57,7 @@ class LLMOpponent(Agent):
         self._base_url = base_url
         self._api_key = api_key
         self._fallback = RandomAgent()
+        self.llm_call_count: int = 0
 
     def act(
         self,
@@ -127,6 +128,7 @@ class LLMOpponent(Agent):
             idx = self._call_with_timeout(obs, legal_actions, diplomacy=diplomacy)
             if idx is None:
                 return None, "empty_or_invalid_response"
+            self.llm_call_count += 1
             return legal_actions[idx], ""
         except FuturesTimeoutError:
             logger.warning("LLM call timed out after %.1fs; falling back", self._timeout)
@@ -148,7 +150,7 @@ class LLMOpponent(Agent):
         """Call Ollama with a hard timeout via ThreadPoolExecutor."""
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
-                call_ollama_for_action_index,
+                _ollama_client.call_ollama_for_action_index,
                 obs,
                 legal_actions,
                 **self._build_ollama_kwargs(diplomacy),

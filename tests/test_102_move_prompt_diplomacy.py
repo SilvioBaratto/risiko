@@ -254,7 +254,7 @@ class TestDiplomacyNoteOrdering:
 # the module uses a different import style (e.g. module-level import).
 # ---------------------------------------------------------------------------
 
-_OLLAMA_PATCH = "src.agents.llm_opponent.call_ollama_for_action_index"
+_OLLAMA_PATCH = "src.agents.ollama_client.call_ollama_for_action_index"
 
 
 class TestLLMOpponentActBackwardCompat:

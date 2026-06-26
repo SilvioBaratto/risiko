@@ -221,7 +221,7 @@ class TestOllamaWiring:
             api_key="test-key",
         )
         with patch(
-            "src.agents.llm_opponent.call_ollama_for_action_index", return_value=0
+            "src.agents.ollama_client.call_ollama_for_action_index", return_value=0
         ) as mock_call:
             a.act(dummy_obs, dummy_legal)
         mock_call.assert_called_once()

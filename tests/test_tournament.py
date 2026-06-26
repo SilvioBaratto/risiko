@@ -1,22 +1,17 @@
 """
 Tests for tournament resumability, concurrency, and RL train-path preservation.
 Issue #115 — RL regression tests are green now.
-TestResumability and TestConcurrency are Red specs for Cycle 8 (training.tournament).
+Issue #117 — TestResumability and TestConcurrency implemented; xfail removed.
 """
 
 import json
 
-import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-_CYCLE8_REASON = "Cycle 8: training.tournament not yet implemented"
+# ── Resumability ──────────────────────────────────────────────────────────────
 
 
-# ── Resumability (Cycle 8 specs) ──────────────────────────────────────────────
-
-
-@pytest.mark.xfail(raises=ModuleNotFoundError, reason=_CYCLE8_REASON, strict=False)
 class TestResumability:
     """Re-invoking with the same run id must skip completed game indices."""
 
@@ -75,10 +70,9 @@ class TestResumability:
         assert pending == expected
 
 
-# ── Concurrency (Cycle 8 specs) ───────────────────────────────────────────────
+# ── Concurrency ───────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(raises=ModuleNotFoundError, reason=_CYCLE8_REASON, strict=False)
 class TestConcurrency:
     """Games must execute concurrently, controlled by max_concurrency."""
 
