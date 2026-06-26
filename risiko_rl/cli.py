@@ -391,6 +391,116 @@ def analyze(
         typer.echo(f"\nreport saved to {output}")
 
 
+@app.command()
+def tournament(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Path to tournament YAML config file"),
+    ] = Path("config/tournament.yaml"),
+    llm_only: Annotated[
+        bool,
+        typer.Option("--llm-only", help="Run LLM-only mode (required this cycle)"),
+    ] = False,
+    run_id: Annotated[
+        str | None,
+        typer.Option("--run-id", help="Run identifier; defaults to config.name for stable resume"),
+    ] = None,
+    max_games: Annotated[
+        int | None,
+        typer.Option("--max-games", help="Cap the number of games to run this invocation"),
+    ] = None,
+    seed: Annotated[
+        int | None,
+        typer.Option("--seed", help="Override config.seed for this run"),
+    ] = None,
+    skip_preflight: Annotated[
+        bool,
+        typer.Option("--skip-preflight", help="Skip Ollama model preflight check"),
+    ] = False,
+) -> None:
+    """Run the 6-LLM diplomacy tournament and emit a strategy leaderboard."""
+    setup_logging()
+    if not llm_only:
+        raise typer.BadParameter(
+            "Only LLM-only mode is supported this cycle — pass --llm-only to proceed.",
+            param_hint="--llm-only",
+        )
+    _wire_tournament(config, run_id, max_games, seed, skip_preflight)
+
+
+def _wire_tournament(
+    config: Path,
+    run_id: str | None,
+    max_games: int | None,
+    seed: int | None,
+    skip_preflight: bool,
+) -> None:
+    """Load config, then wire preflight → runner → analysis → reporting."""
+    from src.utils.log import get_logger  # noqa: PLC0415
+    from src.utils.seed import set_global_seeds  # noqa: PLC0415
+    from training.tournament import run_tournament  # noqa: PLC0415
+    from training.tournament_analysis import analyze_run  # noqa: PLC0415
+    from training.tournament_cli import log_run_header, log_run_summary  # noqa: PLC0415
+
+    cfg = _load_tournament_cfg(config, seed)
+    run_dir, led = _resolve_tournament_paths(cfg, run_id)
+
+    log = get_logger("tournament_cmd")
+    set_global_seeds(cfg.seed)
+    log_run_header(log, cfg, seed=cfg.seed, run_dir=run_dir)
+
+    _run_preflight_or_fail(cfg, skip_preflight)
+    summary = run_tournament(cfg, ledger=led, max_games=max_games, skip_preflight=True)
+    analyze_run(run_dir)  # writes leaderboard.json + report.md under run_dir
+
+    log_run_summary(log, summary)
+    _echo_tournament_summary(run_dir, summary)
+
+
+def _load_tournament_cfg(config: Path, seed: int | None) -> Any:
+    """Load the tournament config and apply the optional --seed override."""
+    import dataclasses  # noqa: PLC0415
+
+    from training.tournament import load_tournament_config  # noqa: PLC0415
+
+    cfg = load_tournament_config(config)
+    return dataclasses.replace(cfg, seed=seed) if seed is not None else cfg
+
+
+def _resolve_tournament_paths(cfg: Any, run_id: str | None) -> tuple[Path, Path]:
+    """Resolve the run directory and its games ledger path."""
+    from training.tournament_cli import (  # noqa: PLC0415
+        build_run_id,
+        ledger_path,
+        tournament_run_dir,
+    )
+
+    run_dir = tournament_run_dir(build_run_id(cfg.name, run_id))
+    return run_dir, ledger_path(run_dir)
+
+
+def _run_preflight_or_fail(cfg: Any, skip_preflight: bool) -> None:
+    """Run the Ollama model preflight unless skipped; surface a clean CLI error."""
+    if skip_preflight:
+        return
+    from training.tournament import run_preflight  # noqa: PLC0415
+
+    try:
+        run_preflight(cfg.models)
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+def _echo_tournament_summary(run_dir: Path, summary: Any) -> None:
+    """Print tournament run results to stdout."""
+    typer.echo(f"run_dir:          {run_dir}")
+    typer.echo(f"games this run:   {summary.games_completed_this_run}")
+    typer.echo(f"total in ledger:  {summary.total_games_in_ledger}")
+    typer.echo(f"total LLM calls:  {summary.total_llm_calls}")
+    typer.echo(f"leaderboard:      {run_dir / 'leaderboard.json'}")
+    typer.echo(f"report:           {run_dir / 'report.md'}")
+
+
 def _build_pool(profiles: Path | None, n_players: int) -> list[Any]:
     if profiles is not None:
         from risiko_rl.agent_loader import load_llm_pool  # noqa: PLC0415
