@@ -252,6 +252,15 @@ def pending_game_indices(total_games: int, completed: frozenset[int]) -> set[int
     return set(range(total_games)) - completed
 
 
+def pending_games(total: int, completed_ids: set[int]) -> set[int]:
+    """Return game indices in ``[0, total)`` not present in *completed_ids*.
+
+    Thin alias over :func:`pending_game_indices`; out-of-range completed ids
+    are naturally excluded since they fall outside ``range(total)``.
+    """
+    return pending_game_indices(total, frozenset(completed_ids))
+
+
 def load_completed_indices(ledger: Path) -> set[int]:
     """Parse game_index from each JSONL line; tolerate missing file and bad lines."""
     if not ledger.exists():
@@ -650,7 +659,7 @@ def run_tournament(
     book = ReputationBook()
     effective_play_fn = _resolve_play_fn(config, play_fn, skip_preflight, book)
     completed = load_completed_indices(ledger)
-    pending = _cap_pending(pending_game_indices(config.n_games, completed), max_games)
+    pending = _cap_pending(pending_game_indices(config.n_games, frozenset(completed)), max_games)
     plans = [build_game_plan(config, idx) for idx in sorted(pending)]
     runner = TournamentRunner(max_concurrency=config.max_concurrency)
     games_done = runner.run(plans, effective_play_fn, lambda r: append_record(ledger, r))
@@ -667,6 +676,7 @@ __all__ = [
     "assign_strategies_to_models",
     "build_game_plan",
     "pending_game_indices",
+    "pending_games",
     "load_completed_indices",
     "load_ledger",
     "append_record",
