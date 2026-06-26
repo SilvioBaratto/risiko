@@ -95,8 +95,11 @@ _NEGOTIATION_SCHEMA: dict[str, Any] = {
 
 _NEGOTIATION_SYSTEM = (
     "You are a Risiko diplomat. Based on the board state and current alliances, "
-    "emit ONLY a JSON negotiation object with integer-array fields. "
-    "Do not write any prose — output the JSON object and nothing else."
+    "emit ONLY a JSON object with EXACTLY these four keys, each a list of "
+    'player-index integers (use [] for none): "propose_alliance_with", '
+    '"accept_alliance_with", "declare_war_on", "attack_priority". '
+    "Do not invent other key names. Do not wrap the JSON in markdown code "
+    "fences. Do not write any prose — output the raw JSON object and nothing else."
 )
 
 # System message enforcing JSON-only output. The native `format` mask already
@@ -399,6 +402,22 @@ def _post_negotiation(
         return None
 
 
+def _extract_json_object(content: str) -> str | None:
+    """Isolate the outermost ``{...}`` span from a model reply.
+
+    Cloud models often ignore the native ``format`` schema and wrap the object
+    in markdown code fences (```json … ```) or surround it with prose. Slicing
+    from the first ``{`` to the last ``}`` recovers the object in all those
+    cases (fences and prose live outside the braces); returns ``None`` when no
+    brace pair is present.
+    """
+    start = content.find("{")
+    end = content.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return content[start : end + 1]
+
+
 def _parse_negotiation(data: dict[str, Any]) -> dict[str, Any] | None:
     """Extract negotiation dict from raw Ollama reply; None on any failure."""
     message = data.get("message") or {}
@@ -409,8 +428,12 @@ def _parse_negotiation(data: dict[str, Any]) -> dict[str, Any] | None:
     if data.get("done_reason") == "length":
         _log.warning("negotiation: response truncated (done_reason=length) → None")
         return None
+    candidate = _extract_json_object(content)
+    if candidate is None:
+        _log.warning("negotiation: no JSON object in %.80r", content)
+        return None
     try:
-        parsed = json.loads(content)
+        parsed = json.loads(candidate)
     except (json.JSONDecodeError, ValueError):
         _log.warning("negotiation: JSON parse error on %.80r", content)
         return None

@@ -19,6 +19,12 @@ max_concurrency: 6   # one concurrent game per model seat (I/O-bound LLM calls)
 # ── Diplomacy ────────────────────────────────────────────────────────────────
 n_rounds: 2  # negotiation rounds per diplomacy cycle (spec: 2–3)
 
+# ── Per-game turn cap (draw backstop + cost bound) ───────────────────────────
+# 6-player games need ~150-200 player-turns to reach a winner; lower values
+# trade resolution for speed (more draws). Each turn drives many slow LLM calls,
+# so this also bounds per-game wall-clock/cost.
+max_turns: 200
+
 # ── Strategy catalog reference (by module path, not by value) ────────────────
 strategy_catalog: src.agents.strategies
 
