@@ -17,13 +17,21 @@ n_games: 30
 max_concurrency: 6   # one concurrent game per model seat (I/O-bound LLM calls)
 
 # ── Diplomacy ────────────────────────────────────────────────────────────────
-n_rounds: 2  # negotiation rounds per diplomacy cycle (spec: 2–3)
+n_rounds: 1            # negotiation rounds per cycle (was 2 — halved for throughput)
+negotiation_cadence: 4 # negotiate every 4th player-turn (was every turn) — diplomacy
+                       # is the dominant per-turn cost (~12 calls/turn at 6p × 2 rounds);
+                       # alliances persist between negotiations, so board play is unaffected.
 
 # ── Per-game turn cap (draw backstop + cost bound) ───────────────────────────
 # 6-player games need ~150-200 player-turns to reach a winner; lower values
 # trade resolution for speed (more draws). Each turn drives many slow LLM calls,
 # so this also bounds per-game wall-clock/cost.
 max_turns: 200
+
+# ── Per-action LLM timeout (s) ───────────────────────────────────────────────
+# Fast models answer in <5s; a model exceeding this falls back to a random legal
+# move so it cannot stall a game. (minimax-m3 was dropped for taking ~74s/action.)
+action_timeout: 45
 
 # ── Strategy catalog reference (by module path, not by value) ────────────────
 strategy_catalog: src.agents.strategies
@@ -40,7 +48,8 @@ strategies:
 # ── 6-model roster (Ollama cloud, :cloud suffix convention) ─────────────────
 models:
   - glm-5.2:cloud
-  - minimax-m3:cloud
+  - gemma4:31b-cloud      # replaced minimax-m3 (ignored think=False on cloud:
+                          # ~5389 tok / ~74s per action → timed out to random)
   - glm-5.1:cloud
   - kimi-k2.6:cloud
   - deepseek-v4-flash:cloud

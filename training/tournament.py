@@ -63,6 +63,12 @@ class TournamentConfig:
     # Per-game turn cap (draw backstop). LLM games make thousands of slow calls,
     # so the cap also bounds wall-clock/cost per game; defaults to _MAX_TURNS.
     max_turns: int = _MAX_TURNS
+    # Negotiate every Nth player-turn (1 = every turn). > 1 cuts the dominant
+    # per-turn LLM-call cost (diplomacy ≈ n_rounds × 6 calls per negotiated turn).
+    negotiation_cadence: int = 1
+    # Per-action LLM timeout (s). A model exceeding this falls back to a random
+    # legal move, so a slow/verbose model can't stall a whole game.
+    action_timeout: float = 120.0
 
 
 @dataclass(frozen=True)
@@ -149,6 +155,8 @@ def _build_config(raw: dict[str, Any]) -> TournamentConfig:
         temperature=float(raw.get("temperature", 0.7)),
         top_p=float(raw.get("top_p", 0.9)),
         max_turns=int(raw.get("max_turns", _MAX_TURNS)),
+        negotiation_cadence=int(raw.get("negotiation_cadence", 1)),
+        action_timeout=float(raw.get("action_timeout", 120.0)),
     )
 
 
@@ -488,14 +496,17 @@ def build_negotiation_call_fn(
 
     def fn(*args: Any) -> dict | None:
         prompt: str = args[1] if len(args) > 1 else ""
-        result = _ollama_client.call_ollama_for_negotiation(
-            root=root,
-            key=key,
-            model=cfg.model,
-            prompt=prompt,
-            max_message_tokens=_NEGOTIATION_MAX_TOKENS,
-            temperature=cfg.temperature,
-        )
+        try:
+            result = _ollama_client.call_ollama_for_negotiation(
+                root=root,
+                key=key,
+                model=cfg.model,
+                prompt=prompt,
+                max_message_tokens=_NEGOTIATION_MAX_TOKENS,
+                temperature=cfg.temperature,
+            )
+        except Exception:  # any LLM/HTTP error → graceful no-op (docstring contract)
+            return None
         return result if isinstance(result, dict) else None
 
     return fn
@@ -531,9 +542,15 @@ def _play_one_game(
     base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
     seats = build_seats(plan.assignment, config)
-    agents: list[LLMOpponent] = [LLMOpponent(player_config=seat) for seat in seats]
+    agents: list[LLMOpponent] = [
+        LLMOpponent(player_config=seat, timeout=config.action_timeout) for seat in seats
+    ]
 
-    diplomacy_cfg = DiplomacyConfig(enabled=True, n_rounds=config.n_rounds)
+    diplomacy_cfg = DiplomacyConfig(
+        enabled=True,
+        n_rounds=config.n_rounds,
+        negotiation_cadence=config.negotiation_cadence,
+    )
 
     per_player_fns = [build_negotiation_call_fn(i, seats, base_url) for i in range(_N_PLAYERS)]
 

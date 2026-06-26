@@ -388,6 +388,9 @@ class DiplomacyRunner(MultiAgentRunner):
         current_turn = self._env.state.turns_elapsed
         if current_turn <= self._last_negotiation_turn:
             return
+        cadence = max(1, getattr(self._cfg, "negotiation_cadence", 1))
+        if current_turn % cadence != 0:
+            return
         self._last_negotiation_turn = current_turn
         speakers = self._active_non_learner_speakers(obs)
         if speakers:

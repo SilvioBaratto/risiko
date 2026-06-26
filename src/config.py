@@ -169,6 +169,11 @@ class DiplomacyConfig:
     enabled: bool = False
     n_rounds: int = 1
     max_message_tokens: int = 128
+    # Negotiate only every Nth player-turn (1 = every turn). Higher values cut
+    # the per-game LLM-call count (diplomacy is ~12 calls/turn at 6 players ×
+    # 2 rounds) at the cost of less frequent alliance updates; alliances persist
+    # between negotiations, so board play is unaffected.
+    negotiation_cadence: int = 1
 
 
 @dataclass(frozen=True)
