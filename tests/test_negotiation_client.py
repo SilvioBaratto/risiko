@@ -188,6 +188,39 @@ def test_when_messages_to_is_absent_then_constrained_fields_still_parse():
         assert "propose_alliance_with" in result
 
 
+def test_when_content_is_markdown_fenced_then_json_is_recovered():
+    """Cloud models wrap the object in ```json fences; the fence is stripped."""
+    inner = json.dumps(
+        {
+            "propose_alliance_with": [1, 2],
+            "accept_alliance_with": [],
+            "declare_war_on": [3],
+            "attack_priority": [3],
+        }
+    )
+    content = f"```json\n{inner}\n```"
+    with patch("src.agents.ollama_client.httpx") as mock_httpx:
+        mock_httpx.post.return_value = _make_http_ok(content=content)
+
+        result = _call()
+
+        assert isinstance(result, dict)
+        assert result["propose_alliance_with"] == [1, 2]
+        assert result["declare_war_on"] == [3]
+
+
+def test_when_content_has_prose_around_object_then_json_is_recovered():
+    """Prose before/after the object is ignored; the {...} span is parsed."""
+    content = 'Here is my move:\n{"propose_alliance_with": [1], "attack_priority": []}\nGood luck.'
+    with patch("src.agents.ollama_client.httpx") as mock_httpx:
+        mock_httpx.post.return_value = _make_http_ok(content=content)
+
+        result = _call()
+
+        assert isinstance(result, dict)
+        assert result["propose_alliance_with"] == [1]
+
+
 def test_when_content_is_empty_then_none_is_returned_without_exception():
     """Empty response content falls back to None (same contract as action client)."""
     with patch("src.agents.ollama_client.httpx") as mock_httpx:

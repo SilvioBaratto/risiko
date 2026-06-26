@@ -60,6 +60,9 @@ class TournamentConfig:
     models: tuple[str, ...]
     temperature: float
     top_p: float
+    # Per-game turn cap (draw backstop). LLM games make thousands of slow calls,
+    # so the cap also bounds wall-clock/cost per game; defaults to _MAX_TURNS.
+    max_turns: int = _MAX_TURNS
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,7 @@ def _build_config(raw: dict[str, Any]) -> TournamentConfig:
         models=tuple(models),
         temperature=float(raw.get("temperature", 0.7)),
         top_p=float(raw.get("top_p", 0.9)),
+        max_turns=int(raw.get("max_turns", _MAX_TURNS)),
     )
 
 
@@ -547,7 +551,7 @@ def _play_one_game(
     runner = DiplomacyRunner(
         env=env,
         agents=agents,
-        max_turns=_MAX_TURNS,
+        max_turns=config.max_turns,
         diplomacy_cfg=diplomacy_cfg,
         reputation=book,
         learner_id=-1,
