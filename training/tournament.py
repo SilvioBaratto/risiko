@@ -11,7 +11,7 @@ import os
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +106,14 @@ class LedgerRecord:
     # (board leader at max_turns), or "draw" (no winner). Lets analysis separate
     # decisive wins from cap-resolved ones. Defaulted for old-ledger from_json.
     resolution: str = "draw"
+    # Final seat ordering best→worst (winner first): survivors by board strength
+    # then eliminated in reverse elimination order. Drives real placement stats
+    # even when no one is eliminated. Empty for old ledgers (falls back to elim).
+    final_ranking: list[int] = field(default_factory=list)
+    # Per-seat diplomacy tallies for this game: distinct alliances formed, and
+    # betrayals (attacking a current ally). Seat-index keyed; empty when none.
+    alliances: dict[str, int] = field(default_factory=dict)
+    betrayals: dict[str, int] = field(default_factory=dict)
 
     def to_json_line(self) -> str:
         """Serialise to a single JSON line with no trailing newline."""
@@ -548,6 +556,31 @@ def _territory_leader(state: Any) -> int | None:
     return best
 
 
+def _final_ranking(state: Any, elimination_order: list[int]) -> list[int]:
+    """Seats ordered best→worst at game end (winner first).
+
+    Survivors (non-eliminated) rank ahead of eliminated seats, ordered by
+    territory count then total armies (lowest index breaks remaining ties).
+    Eliminated seats follow in reverse elimination order (last out ranks higher).
+    Position i in the returned list is finishing place i+1.
+    """
+    owner = np.asarray(state.territory_owner)
+    armies = np.asarray(state.armies)
+    eliminated_flags = np.asarray(state.eliminated)
+    n = int(state.n_players)
+    eliminated = {p for p in range(n) if eliminated_flags[p]}
+    survivors = [p for p in range(n) if p not in eliminated]
+    # Stable sort: equal (territory, armies) keys keep ascending-index order.
+    survivors.sort(
+        key=lambda p: (int(np.sum(owner == p)), int(np.sum(armies[owner == p]))),
+        reverse=True,
+    )
+    elim_ranked = [int(p) for p in reversed(elimination_order)]
+    # Append any eliminated seat missing from elimination_order (defensive).
+    elim_ranked += [p for p in eliminated if p not in elim_ranked]
+    return survivors + elim_ranked
+
+
 def run_game(
     plan: GamePlan,
     config: TournamentConfig,
@@ -574,6 +607,8 @@ def _play_one_game(
     """
     if book is None:
         book = ReputationBook()
+    # The book is session-shared, so snapshot per-player betrayals to diff after.
+    betrayals_before = {p: book.betrayal_count(p) for p in range(_N_PLAYERS)}
     ensure_env_loaded()
     base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
@@ -633,6 +668,18 @@ def _play_one_game(
     seat_strategies = {str(i): list(config.strategies)[i] for i in range(_N_PLAYERS)}
     seat_models = {str(i): seats[i].model for i in range(_N_PLAYERS)}
 
+    final_ranking = _final_ranking(env.state, result.elimination_order)
+    betrayals = {
+        str(p): book.betrayal_count(p) - betrayals_before[p]
+        for p in range(_N_PLAYERS)
+        if book.betrayal_count(p) - betrayals_before[p] > 0
+    }
+    alliances = {
+        str(p): runner._state.alliance_formations[p]
+        for p in range(_N_PLAYERS)
+        if runner._state.alliance_formations.get(p, 0) > 0
+    }
+
     return LedgerRecord(
         game_index=plan.game_index,
         seed=plan.seed,
@@ -647,6 +694,9 @@ def _play_one_game(
         card_trade_turns=result.card_trade_turns,
         llm_call_count=total_llm_calls,
         resolution=resolution,
+        final_ranking=final_ranking,
+        alliances=alliances,
+        betrayals=betrayals,
     )
 
 

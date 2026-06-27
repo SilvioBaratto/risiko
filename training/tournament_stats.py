@@ -271,10 +271,18 @@ def _safe_wilson(wins: int, n: int) -> tuple[float, float]:
 def placements(rec: dict) -> dict[int, int]:
     """Map every seat in *rec* to its finishing placement (1 = best).
 
-    Seats absent from ``elimination_order`` are survivors → placement 1.
-    Eliminated seats rank from 2 (last out) upward by reverse elimination order.
-    Tolerates a missing or empty ``elimination_order``.
+    Prefers ``final_ranking`` (seats best→worst) when present — this gives real
+    placements even when no one is eliminated (capped games), where every seat
+    would otherwise be a place-1 "survivor". Falls back to the elimination-order
+    rule for older ledgers: survivors → 1, eliminated rank from 2 (last out) up.
     """
+    ranking: list[int] = rec.get("final_ranking") or []
+    if ranking:
+        place = {int(seat): pos + 1 for pos, seat in enumerate(ranking)}
+        last = len(ranking) + 1  # defensively place any unranked seat last
+        for k in rec.get("seat_strategies", {}):
+            place.setdefault(int(k), last)
+        return place
     elim: list[int] = rec.get("elimination_order") or []
     n_elim = len(elim)
     result = {int(k): 1 for k in rec["seat_strategies"]}

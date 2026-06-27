@@ -6,7 +6,7 @@ any context (training or eval) without side effects.
 
 from __future__ import annotations
 
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -65,14 +65,26 @@ class DiplomacyState:
         self.grudges: list[Grudge] = []
         self.message_log: deque[Message] = deque(maxlen=max_log)
         self.decay = decay
+        # Per-game tally of distinct alliances each player has formed (counts a
+        # pair once, on first formation — re-proposing an existing alliance does
+        # not re-count). Consumed by the tournament leaderboard.
+        self.alliance_formations: dict[int, int] = defaultdict(int)
 
     def are_allied(self, a: int, b: int) -> bool:
         """Return True if a and b share an alliance (symmetric)."""
         return _pair(a, b) in self.alliances
 
     def form_alliance(self, a: int, b: int) -> None:
-        """Add an alliance between a and b; idempotent."""
-        self.alliances.add(_pair(a, b))
+        """Add an alliance between a and b; idempotent.
+
+        The first time a pair is formed, both members' formation tallies are
+        incremented; re-forming an existing alliance is a no-op (no double-count).
+        """
+        pair = _pair(a, b)
+        if pair not in self.alliances:
+            self.alliances.add(pair)
+            self.alliance_formations[a] += 1
+            self.alliance_formations[b] += 1
 
     def break_alliance(self, a: int, b: int) -> None:
         """Remove the alliance between a and b; no-op if absent."""
