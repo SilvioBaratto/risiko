@@ -26,12 +26,12 @@ _VALID_STRATEGIES = [
 ]
 
 _VALID_MODELS = [
-    "gpt-oss:20b-cloud",
-    "gpt-oss:120b-cloud",
     "gemma4:cloud",
-    "qwen3.5:cloud",
+    "gemma4:31b-cloud",
     "nemotron-3-super:cloud",
-    "minimax-m2.1:cloud",
+    "qwen3.5:cloud",
+    "deepseek-v4-flash:cloud",
+    "kimi-k2.6:cloud",
 ]
 
 
