@@ -70,12 +70,16 @@ strategies:
 # 5h session quota in ~3 games). Context is a non-issue: prompts are ~2-4k
 # tokens, far under every model's 128-256k window.
 models:
-  - gpt-oss:20b-cloud          # Low usage (lightest cloud model)
-  - gpt-oss:120b-cloud         # Medium
-  - gemma4:cloud               # Medium — fast, schema-honoring
-  - qwen3.5:cloud              # Medium — schema-honoring (256k)
-  - nemotron-3-super:cloud     # Medium — MoE, 12B active (efficient)
-  - minimax-m2.1:cloud         # Medium — instruct/interleaved-thinking
+  # All schema-honoring (measured short output / fast), so no free-reasoning
+  # token-burn. gpt-oss and minimax-m2.1 were dropped: as reasoning models they
+  # ignore think=False on cloud and emit 600-1100 tok/action (~9-24s) — the
+  # minimax-m3 trap. Roster leans to efficient instruct/MoE models.
+  - gemma4:cloud               # ~12 tok, 0.8s — gold
+  - gemma4:31b-cloud           # ~7 tok, 0.6s — gold
+  - nemotron-3-super:cloud     # ~8 tok, 1.9s — MoE 12B active
+  - qwen3.5:cloud              # ~189 tok, 5.1s — schema-honoring (256k)
+  - deepseek-v4-flash:cloud    # 0.7s — MoE 13B active
+  - kimi-k2.6:cloud            # 1.5s — schema-honoring
 
 # ── Sampling parameters (applied uniformly; per-player overrides in Cycle 8) ─
 temperature: 0.7
