@@ -65,14 +65,17 @@ strategies:
   - diplomat_coalition
 
 # ── 6-model roster (Ollama cloud, :cloud suffix convention) ─────────────────
+# Light roster — all Low/Medium usage-level to stretch the Ollama-cloud quota
+# (the prior glm-5.x / kimi / deepseek flagships were High/Heavy and drained the
+# 5h session quota in ~3 games). Context is a non-issue: prompts are ~2-4k
+# tokens, far under every model's 128-256k window.
 models:
-  - glm-5.2:cloud
-  - gemma4:31b-cloud      # replaced minimax-m3 (ignored think=False on cloud:
-                          # ~5389 tok / ~74s per action → timed out to random)
-  - glm-5.1:cloud
-  - kimi-k2.6:cloud
-  - deepseek-v4-flash:cloud
-  - qwen3.5:cloud
+  - gpt-oss:20b-cloud          # Low usage (lightest cloud model)
+  - gpt-oss:120b-cloud         # Medium
+  - gemma4:cloud               # Medium — fast, schema-honoring
+  - qwen3.5:cloud              # Medium — schema-honoring (256k)
+  - nemotron-3-super:cloud     # Medium — MoE, 12B active (efficient)
+  - minimax-m2.1:cloud         # Medium — instruct/interleaved-thinking
 
 # ── Sampling parameters (applied uniformly; per-player overrides in Cycle 8) ─
 temperature: 0.7
