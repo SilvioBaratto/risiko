@@ -13,11 +13,14 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from src.agents.diplomacy import DiplomacyState
 from training.tournament import (
     LedgerRecord,
+    _final_ranking,
     _territory_leader,
     load_tournament_config,
 )
+from training.tournament_stats import placements
 
 CONFIG_PATH = pathlib.Path("config/tournament.yaml")
 
@@ -58,6 +61,66 @@ def test_when_no_active_player_holds_territory_then_none():
 def test_when_territories_and_armies_tie_then_lowest_index_wins():
     st = _state([0, 1], [3, 3], [0, 0], 2)
     assert _territory_leader(st) == 0
+
+
+# ── _final_ranking ───────────────────────────────────────────────────────────
+
+
+def test_when_no_eliminations_then_ranking_orders_survivors_by_territory():
+    # p1 holds 3 terr, p0 1, p2 1 (p0 more armies than p2) → [1, 0, 2].
+    st = _state([0, 1, 1, 1, 2], [9, 1, 1, 1, 1], [0, 0, 0], 3)
+    assert _final_ranking(st, []) == [1, 0, 2]
+
+
+def test_when_players_eliminated_then_they_rank_after_survivors_reverse_order():
+    # p0 survives (all land); p1 then p2 eliminated → survivors first, then
+    # eliminated in reverse elimination order (last out ranks higher): [0, 2, 1].
+    st = _state([0, 0, 0, 0], [4, 4, 4, 4], [0, 1, 1], 3)
+    assert _final_ranking(st, [1, 2]) == [0, 2, 1]
+
+
+def test_when_ranking_first_then_matches_territory_leader():
+    st = _state([0, 1, 1, 1, 2], [9, 1, 1, 1, 1], [0, 0, 0], 3)
+    assert _final_ranking(st, [])[0] == _territory_leader(st)
+
+
+# ── placements use final_ranking ─────────────────────────────────────────────
+
+
+def test_when_record_has_final_ranking_then_placements_are_distinct():
+    rec = {
+        "seat_strategies": {"0": "a", "1": "b", "2": "c"},
+        "elimination_order": [],
+        "final_ranking": [2, 0, 1],
+    }
+    assert placements(rec) == {2: 1, 0: 2, 1: 3}
+
+
+def test_when_no_final_ranking_then_falls_back_to_elimination_logic():
+    rec = {
+        "seat_strategies": {"0": "a", "1": "b"},
+        "elimination_order": [1],
+    }
+    # p0 survives → 1; p1 eliminated (last out) → 2.
+    assert placements(rec) == {0: 1, 1: 2}
+
+
+# ── alliance formation counter ───────────────────────────────────────────────
+
+
+def test_when_alliance_formed_then_both_members_counted_once():
+    st = DiplomacyState()
+    st.form_alliance(0, 3)
+    st.form_alliance(0, 3)  # re-forming the same pair must not double-count
+    assert st.alliance_formations[0] == 1
+    assert st.alliance_formations[3] == 1
+
+
+def test_when_player_forms_two_alliances_then_count_is_two():
+    st = DiplomacyState()
+    st.form_alliance(0, 1)
+    st.form_alliance(0, 2)
+    assert st.alliance_formations[0] == 2
 
 
 # ── config field ─────────────────────────────────────────────────────────────
