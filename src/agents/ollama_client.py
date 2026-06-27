@@ -37,8 +37,10 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import time
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -116,6 +118,73 @@ _SYSTEM_PROMPT = (
 )
 
 
+# Ollama cloud throttles with HTTP 429 — for per-minute/concurrency limits and,
+# importantly, the 5-hour session and 7-day weekly usage quotas. The cloud does
+# not reliably send Retry-After or quota headers (ollama/ollama#15663), so the
+# only robust strategy is: on 429, wait and retry until the limit resets, rather
+# than failing or playing a random move. Backoff is exponential with jitter,
+# capped, and honours Retry-After when present.
+_RATE_LIMIT_STATUS = 429
+_BACKOFF_BASE_S = 5.0
+_BACKOFF_CAP_S = 300.0  # 5 min between polls once backed off — cheap vs a 5h/7d wait
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    """Parse a Retry-After header (delta-seconds or HTTP-date) into seconds, or None."""
+    raw = response.headers.get("retry-after")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(raw)
+        return max(0.0, when.timestamp() - time.time())
+    except (TypeError, ValueError):
+        return None
+
+
+def _post_waiting_out_rate_limits(
+    url: str,
+    *,
+    headers: dict[str, str],
+    json_body: dict[str, Any],
+    timeout: float,
+    rate_limit_max_wait: float,
+) -> httpx.Response:
+    """POST, transparently waiting out HTTP 429 rate/usage limits.
+
+    On 429 the call sleeps (Retry-After if given, else capped exponential backoff
+    with jitter) and retries until it succeeds or cumulative wait exceeds
+    *rate_limit_max_wait*. ``rate_limit_max_wait <= 0`` disables waiting (a 429
+    raises immediately — legacy behaviour). Non-429 errors propagate unchanged.
+    """
+    start = time.time()
+    attempt = 0
+    while True:
+        response = httpx.post(url, json=json_body, headers=headers, timeout=timeout)
+        if response.status_code != _RATE_LIMIT_STATUS:
+            response.raise_for_status()
+            return response
+        elapsed = time.time() - start
+        if rate_limit_max_wait <= 0 or elapsed >= rate_limit_max_wait:
+            response.raise_for_status()  # give up → propagate the 429
+        wait = _retry_after_seconds(response)
+        if wait is None:
+            wait = min(_BACKOFF_CAP_S, _BACKOFF_BASE_S * (2**attempt))
+            wait += random.uniform(0.0, wait * 0.25)  # jitter to de-sync callers
+        _log.warning(
+            "Ollama 429 rate-limited (session/weekly/RPM quota); waiting %.0fs then "
+            "retrying — elapsed %.0fs of %.0fs budget",
+            wait,
+            elapsed,
+            rate_limit_max_wait,
+        )
+        time.sleep(wait)
+        attempt += 1
+
+
 def call_ollama_for_action_index(
     obs: dict[str, np.ndarray],
     legal_actions: list[dict[str, int]],
@@ -130,6 +199,7 @@ def call_ollama_for_action_index(
     diplomacy_note: DiplomacyNote | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     think: bool = False,
+    rate_limit_max_wait: float = 0.0,
 ) -> int | None:
     """Call Ollama and return an index into *legal_actions*, or None.
 
@@ -156,6 +226,10 @@ def call_ollama_for_action_index(
             single legal-action index needing no reasoning, and disabling it
             cuts reasoning-model latency ~10-100x. Set True only if a model's
             index quality measurably improves with reasoning.
+        rate_limit_max_wait: Seconds to wait out HTTP 429 rate/usage limits
+            (per call) before giving up; 0 disables waiting (legacy immediate
+            fallback). Lets a run pause for the Ollama-cloud session/weekly
+            reset instead of returning a random move.
 
     Returns:
         An index in ``[0, len(legal_actions))`` chosen by the model, or ``None``
@@ -204,8 +278,13 @@ def call_ollama_for_action_index(
         prompt,
     )
     t0 = time.time()
-    response = httpx.post(url, json=body, headers=headers, timeout=timeout)
-    response.raise_for_status()
+    response = _post_waiting_out_rate_limits(
+        url,
+        headers=headers,
+        json_body=body,
+        timeout=timeout,
+        rate_limit_max_wait=rate_limit_max_wait,
+    )
     elapsed = time.time() - t0
     data = response.json()
     return _parse_index(data, legal_actions, model, elapsed)
@@ -346,11 +425,14 @@ def call_ollama_for_negotiation(
     temperature: float = 0.7,
     timeout: float = 60.0,
     think: bool = False,
+    rate_limit_max_wait: float = 0.0,
 ) -> dict[str, Any] | None:
     """Call Ollama for a negotiation response; returns a parsed dict or None.
 
     Same fallback contract as :func:`call_ollama_for_action_index`: any HTTP,
-    timeout, or parse error returns ``None`` without raising.
+    timeout, or parse error returns ``None`` without raising. HTTP 429
+    rate/usage limits are waited out (see *rate_limit_max_wait*) rather than
+    treated as a failure.
 
     Args:
         root: Ollama root URL, e.g. ``http://localhost:11434`` (no ``/v1``).
@@ -361,10 +443,12 @@ def call_ollama_for_negotiation(
         temperature: Sampling temperature; default 0.7 for varied social play.
         timeout: Per-call HTTP timeout in seconds.
         think: Enable model chain-of-thought. Default False.
+        rate_limit_max_wait: Seconds to wait out HTTP 429 before giving up; 0
+            disables waiting (legacy immediate fallback).
     """
     body = _build_negotiation_body(model, prompt, max_message_tokens, temperature, think)
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    return _post_negotiation(f"{root}/api/chat", headers, body, timeout)
+    return _post_negotiation(f"{root}/api/chat", headers, body, timeout, rate_limit_max_wait)
 
 
 def _build_negotiation_body(
@@ -392,10 +476,16 @@ def _post_negotiation(
     headers: dict[str, str],
     body: dict[str, Any],
     timeout: float,
+    rate_limit_max_wait: float = 0.0,
 ) -> dict[str, Any] | None:
     try:
-        resp = httpx.post(url, json=body, headers=headers, timeout=timeout)
-        resp.raise_for_status()
+        resp = _post_waiting_out_rate_limits(
+            url,
+            headers=headers,
+            json_body=body,
+            timeout=timeout,
+            rate_limit_max_wait=rate_limit_max_wait,
+        )
         return _parse_negotiation(resp.json())
     except (_HttpxHTTPError, ValueError) as exc:
         _log.warning("call_ollama_for_negotiation error: %s", exc)

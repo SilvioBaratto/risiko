@@ -14,7 +14,10 @@ seed: 42
 # Start with a 30-game pilot to validate the pipeline; scale to 1000+ games
 # for statistically significant strategy win-rates (Wilson CI).
 n_games: 30
-max_concurrency: 6   # one concurrent game per model seat (I/O-bound LLM calls)
+# Concurrent games. Ollama cloud limits concurrent models per plan (Free 1,
+# Pro 3, Max 10); exceeding it triggers HTTP 429. 3 matches Pro and keeps 429s
+# rare — raise only if your plan allows more concurrency.
+max_concurrency: 3
 
 # ── Diplomacy ────────────────────────────────────────────────────────────────
 n_rounds: 1            # negotiation rounds per cycle (was 2 — halved for throughput)
@@ -28,10 +31,18 @@ negotiation_cadence: 4 # negotiate every 4th player-turn (was every turn) — di
 # so this also bounds per-game wall-clock/cost.
 max_turns: 200
 
-# ── Per-action LLM timeout (s) ───────────────────────────────────────────────
-# Fast models answer in <5s; a model exceeding this falls back to a random legal
-# move so it cannot stall a game. (minimax-m3 was dropped for taking ~74s/action.)
-action_timeout: 45
+# ── Per-HTTP-attempt timeout (s) ─────────────────────────────────────────────
+# Bounds a single HTTP attempt (not the whole call). Fast models answer in <5s;
+# a genuinely hung attempt past this falls back to a random move. The hard
+# wall-clock cap is disabled in the tournament so rate-limit waits aren't killed.
+action_timeout: 120
+
+# ── Rate-limit wait-out (s) ──────────────────────────────────────────────────
+# On HTTP 429 (Ollama-cloud per-minute / 5-hour session / 7-day weekly quota),
+# the client backs off and retries within this budget instead of playing a
+# random move or erroring. Default 1 week (604800s) covers the weekly reset, so
+# the run pauses and resumes automatically when the quota refreshes.
+rate_limit_max_wait: 604800
 
 # ── Draw resolution ──────────────────────────────────────────────────────────
 # 6-player games rarely eliminate down to one survivor within max_turns, so
