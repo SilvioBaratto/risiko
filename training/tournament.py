@@ -69,6 +69,11 @@ class TournamentConfig:
     # Per-action LLM timeout (s). A model exceeding this falls back to a random
     # legal move, so a slow/verbose model can't stall a whole game.
     action_timeout: float = 120.0
+    # Seconds to wait out HTTP 429 rate/usage limits (per call) before giving up.
+    # Ollama cloud throttles per-minute and on 5-hour session / 7-day weekly
+    # quotas; the client backs off and retries within this budget instead of
+    # playing a random move. Default 1 week covers the longest (weekly) reset.
+    rate_limit_max_wait: float = 604800.0
     # How to score a game with no sole survivor at the turn cap. "territory":
     # the board leader (most territories, tie-break by armies) is the winner, so
     # the leaderboard has signal even when 6p games don't eliminate to 1 within
@@ -175,6 +180,7 @@ def _build_config(raw: dict[str, Any]) -> TournamentConfig:
         max_turns=int(raw.get("max_turns", _MAX_TURNS)),
         negotiation_cadence=int(raw.get("negotiation_cadence", 1)),
         action_timeout=float(raw.get("action_timeout", 120.0)),
+        rate_limit_max_wait=float(raw.get("rate_limit_max_wait", 604800.0)),
         draw_resolution=str(raw.get("draw_resolution", "territory")),
     )
 
@@ -502,12 +508,14 @@ def build_negotiation_call_fn(
     player_id: int,
     player_configs: Sequence[PlayerConfig],
     base_url: str,
+    rate_limit_max_wait: float = 0.0,
 ) -> Callable | None:
     """Return a callable ``(player_id, prompt) -> dict | None`` for *player_id*.
 
     Routes negotiation prompts through ``call_ollama_for_negotiation`` (not the
     action-index path).  Strips a trailing ``/v1`` from *base_url* (Ollama cloud
-    compatibility).  The returned callable returns ``None`` on any LLM/HTTP error.
+    compatibility).  The returned callable returns ``None`` on any LLM/HTTP error;
+    HTTP 429 rate/usage limits are waited out (``rate_limit_max_wait``).
     """
     cfg = player_configs[player_id]
     root = base_url.removesuffix("/v1")
@@ -523,6 +531,7 @@ def build_negotiation_call_fn(
                 prompt=prompt,
                 max_message_tokens=_NEGOTIATION_MAX_TOKENS,
                 temperature=cfg.temperature,
+                rate_limit_max_wait=rate_limit_max_wait,
             )
         except Exception:  # any LLM/HTTP error → graceful no-op (docstring contract)
             return None
@@ -613,8 +622,17 @@ def _play_one_game(
     base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
     seats = build_seats(plan.assignment, config)
+    # timeout=0 disables the hard wall-clock cap so a call waiting out a 429
+    # rate/usage limit is never aborted into a random move; http_timeout bounds
+    # each individual HTTP attempt, and rate_limit_max_wait governs the wait.
     agents: list[LLMOpponent] = [
-        LLMOpponent(player_config=seat, timeout=config.action_timeout) for seat in seats
+        LLMOpponent(
+            player_config=seat,
+            timeout=0,
+            http_timeout=config.action_timeout,
+            rate_limit_max_wait=config.rate_limit_max_wait,
+        )
+        for seat in seats
     ]
 
     diplomacy_cfg = DiplomacyConfig(
@@ -623,7 +641,10 @@ def _play_one_game(
         negotiation_cadence=config.negotiation_cadence,
     )
 
-    per_player_fns = [build_negotiation_call_fn(i, seats, base_url) for i in range(_N_PLAYERS)]
+    per_player_fns = [
+        build_negotiation_call_fn(i, seats, base_url, config.rate_limit_max_wait)
+        for i in range(_N_PLAYERS)
+    ]
 
     def _routing_call_fn(player_id: int, prompt: str) -> dict | None:
         fn = per_player_fns[player_id]

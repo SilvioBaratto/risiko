@@ -34,23 +34,35 @@ class LLMOpponent(Agent):
         base_url: str | None = None,
         api_key: str | None = None,
         player_config: PlayerConfig | None = None,
+        http_timeout: float | None = None,
+        rate_limit_max_wait: float = 0.0,
     ) -> None:
         """Create an LLM opponent backed by Ollama.
 
         Args:
             model: Model/tag name (overridden by ``player_config.model``), e.g.
                 ``gpt-oss:20b`` (local) or ``gpt-oss:120b`` (cloud).
-            timeout: Hard timeout per LLM call in seconds.
+            timeout: Hard wall-clock cap per call (via a watchdog thread); on
+                expiry the move falls back to random. ``0`` disables the cap so a
+                call that is waiting out a rate limit is never aborted — the
+                per-request ``http_timeout`` still bounds each HTTP attempt.
             temperature: Sampling temperature (overridden by ``player_config``).
             top_p: Nucleus sampling parameter (overridden by ``player_config``).
             strategy_hint: Prompt directive (overridden by ``player_config``).
             base_url: Optional override for ``OLLAMA_BASE_URL``.
             api_key: Optional override for ``OLLAMA_API_KEY``.
             player_config: Per-player sampling profile; takes precedence over scalars.
+            http_timeout: Per-HTTP-attempt timeout (s) passed to the client;
+                defaults to ``timeout`` (or 120 when the hard cap is disabled).
+            rate_limit_max_wait: Seconds to wait out HTTP 429 rate/usage limits
+                before giving up (0 = no waiting). Lets the run pause for the
+                Ollama-cloud session/weekly reset instead of playing random moves.
         """
         self._player_config = player_config
         self._model = player_config.model if player_config else model
         self._timeout = timeout
+        self._http_timeout = http_timeout if http_timeout is not None else (timeout or 120.0)
+        self._rate_limit_max_wait = rate_limit_max_wait
         self._temperature = player_config.temperature if player_config else temperature
         self._top_p = player_config.top_p if player_config else top_p
         self._strategy_hint = player_config.strategy_hint if player_config else strategy_hint
@@ -147,13 +159,22 @@ class LLMOpponent(Agent):
         *,
         diplomacy: DiplomacyNote | None = None,
     ) -> int | None:
-        """Call Ollama with a hard timeout via ThreadPoolExecutor."""
+        """Call Ollama, optionally under a hard wall-clock cap.
+
+        When ``self._timeout`` is falsy the call runs inline with no watchdog,
+        so a long rate-limit wait inside the client is never aborted (each HTTP
+        attempt is still bounded by ``http_timeout``). Otherwise a
+        ThreadPoolExecutor enforces the hard cap and raises on expiry.
+        """
+        kwargs = self._build_ollama_kwargs(diplomacy)
+        if not self._timeout:
+            return _ollama_client.call_ollama_for_action_index(obs, legal_actions, **kwargs)
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
                 _ollama_client.call_ollama_for_action_index,
                 obs,
                 legal_actions,
-                **self._build_ollama_kwargs(diplomacy),
+                **kwargs,
             )
             return future.result(timeout=self._timeout)
 
@@ -168,11 +189,15 @@ class LLMOpponent(Agent):
             "model": self._model,
             "base_url": self._base_url,
             "api_key": self._api_key,
-            "timeout": self._timeout,
+            "timeout": self._http_timeout,
             "temperature": self._temperature,
             "top_p": self._top_p,
             "strategy_hint": self._strategy_hint,
         }
+        # Added only when enabled so the default-construction call stays
+        # byte-identical to the training path (disabled-equivalence guarantee).
+        if self._rate_limit_max_wait > 0:
+            kwargs["rate_limit_max_wait"] = self._rate_limit_max_wait
         if diplomacy is not None:
             kwargs["diplomacy_note"] = diplomacy
         return kwargs
