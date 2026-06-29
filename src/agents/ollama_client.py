@@ -54,6 +54,36 @@ from src.utils.log import get_logger
 
 _log = get_logger("llm")
 
+# ── Optional call tracing (for visualization / full-game replay) ─────────────
+# When a sink list is installed via start_call_trace(), every action and
+# negotiation call appends a record with the exact prompt, the raw model
+# response (including the model's `thinking` trace when it emits one), and the
+# parsed result. Disabled by default (sink is None) → zero overhead and
+# byte-identical behavior. Intended for single-game tracing (calls are recorded
+# in the order they happen); not thread-safe across concurrent games.
+_CALL_TRACE: list[dict[str, Any]] | None = None
+
+
+def start_call_trace() -> list[dict[str, Any]]:
+    """Begin recording LLM calls; returns the list that will collect records."""
+    global _CALL_TRACE
+    _CALL_TRACE = []
+    return _CALL_TRACE
+
+
+def stop_call_trace() -> list[dict[str, Any]] | None:
+    """Stop recording and return the collected records (or None if not active)."""
+    global _CALL_TRACE
+    trace, _CALL_TRACE = _CALL_TRACE, None
+    return trace
+
+
+def _record_call(entry: dict[str, Any]) -> None:
+    """Append a trace record if tracing is active (no-op otherwise)."""
+    if _CALL_TRACE is not None:
+        _CALL_TRACE.append(entry)
+
+
 ENV_BASE_URL = "OLLAMA_BASE_URL"
 ENV_API_KEY = "OLLAMA_API_KEY"
 
@@ -287,7 +317,26 @@ def call_ollama_for_action_index(
     )
     elapsed = time.time() - t0
     data = response.json()
-    return _parse_index(data, legal_actions, model, elapsed)
+    idx = _parse_index(data, legal_actions, model, elapsed)
+    if _CALL_TRACE is not None:
+        message = data.get("message") or {}
+        chosen = None
+        if idx is not None and 0 <= idx < len(legal_actions):
+            chosen = legal_actions[idx]
+        _record_call(
+            {
+                "kind": "action",
+                "model": model,
+                "prompt": prompt,
+                "response": message.get("content"),
+                "thinking": message.get("thinking"),
+                "parsed_index": idx,
+                "chosen_action": chosen,
+                "latency_s": round(elapsed, 3),
+                "eval_count": data.get("eval_count"),
+            }
+        )
+    return idx
 
 
 def list_ollama_models(
@@ -448,7 +497,9 @@ def call_ollama_for_negotiation(
     """
     body = _build_negotiation_body(model, prompt, max_message_tokens, temperature, think)
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    return _post_negotiation(f"{root}/api/chat", headers, body, timeout, rate_limit_max_wait)
+    return _post_negotiation(
+        f"{root}/api/chat", headers, body, timeout, rate_limit_max_wait, model, prompt
+    )
 
 
 def _build_negotiation_body(
@@ -477,6 +528,8 @@ def _post_negotiation(
     body: dict[str, Any],
     timeout: float,
     rate_limit_max_wait: float = 0.0,
+    model: str = "",
+    prompt: str = "",
 ) -> dict[str, Any] | None:
     try:
         resp = _post_waiting_out_rate_limits(
@@ -486,7 +539,22 @@ def _post_negotiation(
             timeout=timeout,
             rate_limit_max_wait=rate_limit_max_wait,
         )
-        return _parse_negotiation(resp.json())
+        data = resp.json()
+        parsed = _parse_negotiation(data)
+        if _CALL_TRACE is not None:
+            message = data.get("message") or {}
+            _record_call(
+                {
+                    "kind": "negotiation",
+                    "model": model,
+                    "prompt": prompt,
+                    "response": message.get("content"),
+                    "thinking": message.get("thinking"),
+                    "parsed": parsed,
+                    "eval_count": data.get("eval_count"),
+                }
+            )
+        return parsed
     except (_HttpxHTTPError, ValueError) as exc:
         _log.warning("call_ollama_for_negotiation error: %s", exc)
         return None
