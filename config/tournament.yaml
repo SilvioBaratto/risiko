@@ -13,7 +13,7 @@ seed: 42
 # ── Scale & concurrency ──────────────────────────────────────────────────────
 # Start with a 30-game pilot to validate the pipeline; scale to 1000+ games
 # for statistically significant strategy win-rates (Wilson CI).
-n_games: 300
+n_games: 100
 # Concurrent games. Ollama cloud limits concurrent models per plan (Free 1,
 # Pro 3, Max 10); exceeding it triggers HTTP 429. 3 matches Pro and keeps 429s
 # rare — raise only if your plan allows more concurrency.
