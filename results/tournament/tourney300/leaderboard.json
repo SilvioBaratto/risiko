@@ -1,0 +1,384 @@
+{
+  "run": "tourney300",
+  "n_games": 53,
+  "n_malformed": 0,
+  "n_players": 6,
+  "strategies": [
+    {
+      "strategy": "diplomat_coalition",
+      "games": 53,
+      "wins": 15,
+      "win_rate": 0.283,
+      "ci_low": 0.1797,
+      "ci_high": 0.4157,
+      "mean_placement": 2.9811,
+      "betrayals": 110,
+      "alliances": 133
+    },
+    {
+      "strategy": "card_cycle_hunter",
+      "games": 53,
+      "wins": 12,
+      "win_rate": 0.2264,
+      "ci_low": 0.1345,
+      "ci_high": 0.3553,
+      "mean_placement": 2.5283,
+      "betrayals": 312,
+      "alliances": 190
+    },
+    {
+      "strategy": "aggressive_blitz",
+      "games": 53,
+      "wins": 10,
+      "win_rate": 0.1887,
+      "ci_low": 0.1059,
+      "ci_high": 0.3136,
+      "mean_placement": 3.4151,
+      "betrayals": 462,
+      "alliances": 317
+    },
+    {
+      "strategy": "australia_lock",
+      "games": 53,
+      "wins": 7,
+      "win_rate": 0.1321,
+      "ci_low": 0.0655,
+      "ci_high": 0.2484,
+      "mean_placement": 3.7358,
+      "betrayals": 261,
+      "alliances": 167
+    },
+    {
+      "strategy": "south_america_lock",
+      "games": 53,
+      "wins": 7,
+      "win_rate": 0.1321,
+      "ci_low": 0.0655,
+      "ci_high": 0.2484,
+      "mean_placement": 3.566,
+      "betrayals": 190,
+      "alliances": 166
+    },
+    {
+      "strategy": "turtle_defensive",
+      "games": 53,
+      "wins": 2,
+      "win_rate": 0.0377,
+      "ci_low": 0.0104,
+      "ci_high": 0.1275,
+      "mean_placement": 4.7736,
+      "betrayals": 24,
+      "alliances": 187
+    }
+  ],
+  "models": [
+    {
+      "model": "gemma4:31b-cloud",
+      "games": 53,
+      "wins": 23,
+      "win_rate": 0.434,
+      "ci_low": 0.3095,
+      "ci_high": 0.5673,
+      "mean_placement": 2.3774
+    },
+    {
+      "model": "gemma4:cloud",
+      "games": 53,
+      "wins": 18,
+      "win_rate": 0.3396,
+      "ci_low": 0.2269,
+      "ci_high": 0.4741,
+      "mean_placement": 2.2075
+    },
+    {
+      "model": "qwen3.5:cloud",
+      "games": 53,
+      "wins": 9,
+      "win_rate": 0.1698,
+      "ci_low": 0.092,
+      "ci_high": 0.2923,
+      "mean_placement": 2.717
+    },
+    {
+      "model": "kimi-k2.6:cloud",
+      "games": 53,
+      "wins": 2,
+      "win_rate": 0.0377,
+      "ci_low": 0.0104,
+      "ci_high": 0.1275,
+      "mean_placement": 3.9623
+    },
+    {
+      "model": "nemotron-3-super:cloud",
+      "games": 53,
+      "wins": 1,
+      "win_rate": 0.0189,
+      "ci_low": 0.0033,
+      "ci_high": 0.0994,
+      "mean_placement": 4.7358
+    },
+    {
+      "model": "deepseek-v4-flash:cloud",
+      "games": 53,
+      "wins": 0,
+      "win_rate": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0676,
+      "mean_placement": 5.0
+    }
+  ],
+  "matrix": [
+    {
+      "strategy": "aggressive_blitz",
+      "model": "deepseek-v4-flash:cloud",
+      "games": 10,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "aggressive_blitz",
+      "model": "gemma4:31b-cloud",
+      "games": 11,
+      "wins": 6,
+      "win_rate": 0.5455
+    },
+    {
+      "strategy": "aggressive_blitz",
+      "model": "gemma4:cloud",
+      "games": 9,
+      "wins": 2,
+      "win_rate": 0.2222
+    },
+    {
+      "strategy": "aggressive_blitz",
+      "model": "kimi-k2.6:cloud",
+      "games": 9,
+      "wins": 1,
+      "win_rate": 0.1111
+    },
+    {
+      "strategy": "aggressive_blitz",
+      "model": "nemotron-3-super:cloud",
+      "games": 8,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "aggressive_blitz",
+      "model": "qwen3.5:cloud",
+      "games": 6,
+      "wins": 1,
+      "win_rate": 0.1667
+    },
+    {
+      "strategy": "australia_lock",
+      "model": "deepseek-v4-flash:cloud",
+      "games": 16,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "australia_lock",
+      "model": "gemma4:31b-cloud",
+      "games": 8,
+      "wins": 4,
+      "win_rate": 0.5
+    },
+    {
+      "strategy": "australia_lock",
+      "model": "gemma4:cloud",
+      "games": 6,
+      "wins": 2,
+      "win_rate": 0.3333
+    },
+    {
+      "strategy": "australia_lock",
+      "model": "kimi-k2.6:cloud",
+      "games": 9,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "australia_lock",
+      "model": "nemotron-3-super:cloud",
+      "games": 7,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "australia_lock",
+      "model": "qwen3.5:cloud",
+      "games": 7,
+      "wins": 1,
+      "win_rate": 0.1429
+    },
+    {
+      "strategy": "card_cycle_hunter",
+      "model": "deepseek-v4-flash:cloud",
+      "games": 3,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "card_cycle_hunter",
+      "model": "gemma4:31b-cloud",
+      "games": 11,
+      "wins": 5,
+      "win_rate": 0.4545
+    },
+    {
+      "strategy": "card_cycle_hunter",
+      "model": "gemma4:cloud",
+      "games": 6,
+      "wins": 3,
+      "win_rate": 0.5
+    },
+    {
+      "strategy": "card_cycle_hunter",
+      "model": "kimi-k2.6:cloud",
+      "games": 8,
+      "wins": 1,
+      "win_rate": 0.125
+    },
+    {
+      "strategy": "card_cycle_hunter",
+      "model": "nemotron-3-super:cloud",
+      "games": 9,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "card_cycle_hunter",
+      "model": "qwen3.5:cloud",
+      "games": 16,
+      "wins": 3,
+      "win_rate": 0.1875
+    },
+    {
+      "strategy": "diplomat_coalition",
+      "model": "deepseek-v4-flash:cloud",
+      "games": 8,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "diplomat_coalition",
+      "model": "gemma4:31b-cloud",
+      "games": 9,
+      "wins": 7,
+      "win_rate": 0.7778
+    },
+    {
+      "strategy": "diplomat_coalition",
+      "model": "gemma4:cloud",
+      "games": 11,
+      "wins": 7,
+      "win_rate": 0.6364
+    },
+    {
+      "strategy": "diplomat_coalition",
+      "model": "kimi-k2.6:cloud",
+      "games": 9,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "diplomat_coalition",
+      "model": "nemotron-3-super:cloud",
+      "games": 8,
+      "wins": 1,
+      "win_rate": 0.125
+    },
+    {
+      "strategy": "diplomat_coalition",
+      "model": "qwen3.5:cloud",
+      "games": 8,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "south_america_lock",
+      "model": "deepseek-v4-flash:cloud",
+      "games": 7,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "south_america_lock",
+      "model": "gemma4:31b-cloud",
+      "games": 3,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "south_america_lock",
+      "model": "gemma4:cloud",
+      "games": 12,
+      "wins": 3,
+      "win_rate": 0.25
+    },
+    {
+      "strategy": "south_america_lock",
+      "model": "kimi-k2.6:cloud",
+      "games": 6,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "south_america_lock",
+      "model": "nemotron-3-super:cloud",
+      "games": 13,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "south_america_lock",
+      "model": "qwen3.5:cloud",
+      "games": 12,
+      "wins": 4,
+      "win_rate": 0.3333
+    },
+    {
+      "strategy": "turtle_defensive",
+      "model": "deepseek-v4-flash:cloud",
+      "games": 9,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "turtle_defensive",
+      "model": "gemma4:31b-cloud",
+      "games": 11,
+      "wins": 1,
+      "win_rate": 0.0909
+    },
+    {
+      "strategy": "turtle_defensive",
+      "model": "gemma4:cloud",
+      "games": 9,
+      "wins": 1,
+      "win_rate": 0.1111
+    },
+    {
+      "strategy": "turtle_defensive",
+      "model": "kimi-k2.6:cloud",
+      "games": 12,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "turtle_defensive",
+      "model": "nemotron-3-super:cloud",
+      "games": 8,
+      "wins": 0,
+      "win_rate": 0.0
+    },
+    {
+      "strategy": "turtle_defensive",
+      "model": "qwen3.5:cloud",
+      "games": 4,
+      "wins": 0,
+      "win_rate": 0.0
+    }
+  ]
+}
