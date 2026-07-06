@@ -1,6 +1,6 @@
 # Tournament Report — tourney300
 
-**Games completed:** 53  
+**Games completed:** 100  
 **Malformed skipped:** 0  
 **Players per game:** 6
 
@@ -8,53 +8,53 @@
 
 | Rank | Strategy | Games | Wins | Win% | 95% CI | Mean Placement | Betrayals | Alliances |
 |------|----------|-------|------|------|--------|----------------|-----------|-----------|
-| 1 | diplomat_coalition | 53 | 15 | 28.30% | [0.1797, 0.4157] | 2.98 | 110 | 133 |
-| 2 | card_cycle_hunter | 53 | 12 | 22.64% | [0.1345, 0.3553] | 2.53 | 312 | 190 |
-| 3 | aggressive_blitz | 53 | 10 | 18.87% | [0.1059, 0.3136] | 3.42 | 462 | 317 |
-| 4 | australia_lock | 53 | 7 | 13.21% | [0.0655, 0.2484] | 3.74 | 261 | 167 |
-| 5 | south_america_lock | 53 | 7 | 13.21% | [0.0655, 0.2484] | 3.57 | 190 | 166 |
-| 6 | turtle_defensive | 53 | 2 | 3.77% | [0.0104, 0.1275] | 4.77 | 24 | 187 |
+| 1 | diplomat_coalition | 100 | 27 | 27.00% | [0.1927, 0.3643] | 2.99 | 197 | 231 |
+| 2 | card_cycle_hunter | 100 | 25 | 25.00% | [0.1755, 0.3430] | 2.66 | 523 | 349 |
+| 3 | aggressive_blitz | 100 | 19 | 19.00% | [0.1251, 0.2778] | 3.26 | 835 | 615 |
+| 4 | australia_lock | 100 | 14 | 14.00% | [0.0853, 0.2214] | 3.48 | 456 | 313 |
+| 5 | south_america_lock | 100 | 11 | 11.00% | [0.0625, 0.1863] | 3.74 | 422 | 375 |
+| 6 | turtle_defensive | 100 | 4 | 4.00% | [0.0157, 0.0984] | 4.87 | 36 | 343 |
 
 ## Model Leaderboard
 
 | Rank | Model | Games | Wins | Win% | 95% CI | Mean Placement |
 |------|-------|-------|------|------|--------|----------------|
-| 1 | gemma4:31b-cloud | 53 | 23 | 43.40% | [0.3095, 0.5673] | 2.38 |
-| 2 | gemma4:cloud | 53 | 18 | 33.96% | [0.2269, 0.4741] | 2.21 |
-| 3 | qwen3.5:cloud | 53 | 9 | 16.98% | [0.0920, 0.2923] | 2.72 |
-| 4 | kimi-k2.6:cloud | 53 | 2 | 3.77% | [0.0104, 0.1275] | 3.96 |
-| 5 | nemotron-3-super:cloud | 53 | 1 | 1.89% | [0.0033, 0.0994] | 4.74 |
-| 6 | deepseek-v4-flash:cloud | 53 | 0 | 0.00% | [0.0000, 0.0676] | 5.00 |
+| 1 | gemma4:31b-cloud | 100 | 39 | 39.00% | [0.3002, 0.4880] | 2.48 |
+| 2 | gemma4:cloud | 100 | 38 | 38.00% | [0.2910, 0.4779] | 2.19 |
+| 3 | qwen3.5:cloud | 100 | 18 | 18.00% | [0.1170, 0.2667] | 2.83 |
+| 4 | kimi-k2.6:cloud | 100 | 4 | 4.00% | [0.0157, 0.0984] | 3.86 |
+| 5 | nemotron-3-super:cloud | 100 | 1 | 1.00% | [0.0018, 0.0545] | 4.69 |
+| 6 | deepseek-v4-flash:cloud | 100 | 0 | 0.00% | [0.0000, 0.0370] | 4.95 |
 
 ## Strategy × Model Win Matrix
 
 | Strategy | deepseek-v4-flash:cloud | gemma4:31b-cloud | gemma4:cloud | kimi-k2.6:cloud | nemotron-3-super:cloud | qwen3.5:cloud |
 |---|---|---|---|---|---|---|
-| aggressive_blitz | 0.0% (0/10) | 54.5% (6/11) | 22.2% (2/9) | 11.1% (1/9) | 0.0% (0/8) | 16.7% (1/6) |
-| australia_lock | 0.0% (0/16) | 50.0% (4/8) | 33.3% (2/6) | 0.0% (0/9) | 0.0% (0/7) | 14.3% (1/7) |
-| card_cycle_hunter | 0.0% (0/3) | 45.5% (5/11) | 50.0% (3/6) | 12.5% (1/8) | 0.0% (0/9) | 18.8% (3/16) |
-| diplomat_coalition | 0.0% (0/8) | 77.8% (7/9) | 63.6% (7/11) | 0.0% (0/9) | 12.5% (1/8) | 0.0% (0/8) |
-| south_america_lock | 0.0% (0/7) | 0.0% (0/3) | 25.0% (3/12) | 0.0% (0/6) | 0.0% (0/13) | 33.3% (4/12) |
-| turtle_defensive | 0.0% (0/9) | 9.1% (1/11) | 11.1% (1/9) | 0.0% (0/12) | 0.0% (0/8) | 0.0% (0/4) |
+| aggressive_blitz | 0.0% (0/19) | 45.0% (9/20) | 27.8% (5/18) | 11.8% (2/17) | 0.0% (0/14) | 25.0% (3/12) |
+| australia_lock | 0.0% (0/25) | 50.0% (9/18) | 26.7% (4/15) | 0.0% (0/15) | 0.0% (0/11) | 6.2% (1/16) |
+| card_cycle_hunter | 0.0% (0/12) | 62.5% (10/16) | 58.3% (7/12) | 7.1% (1/14) | 0.0% (0/19) | 25.9% (7/27) |
+| diplomat_coalition | 0.0% (0/18) | 61.5% (8/13) | 72.7% (16/22) | 5.9% (1/17) | 6.2% (1/16) | 7.1% (1/14) |
+| south_america_lock | 0.0% (0/10) | 8.3% (1/12) | 21.1% (4/19) | 0.0% (0/15) | 0.0% (0/24) | 30.0% (6/20) |
+| turtle_defensive | 0.0% (0/16) | 9.5% (2/21) | 14.3% (2/14) | 0.0% (0/22) | 0.0% (0/16) | 0.0% (0/11) |
 
 ## Survival & Placement
 
 | Rank | Strategy | Mean Placement |
 |------|----------|----------------|
-| 1 | card_cycle_hunter | 2.53 |
-| 2 | diplomat_coalition | 2.98 |
-| 3 | aggressive_blitz | 3.42 |
-| 4 | south_america_lock | 3.57 |
-| 5 | australia_lock | 3.74 |
-| 6 | turtle_defensive | 4.77 |
+| 1 | card_cycle_hunter | 2.66 |
+| 2 | diplomat_coalition | 2.99 |
+| 3 | aggressive_blitz | 3.26 |
+| 4 | australia_lock | 3.48 |
+| 5 | south_america_lock | 3.74 |
+| 6 | turtle_defensive | 4.87 |
 
 ## Diplomacy (Alliances & Betrayals)
 
 | Strategy | Betrayals | Alliances |
 |----------|-----------|-----------|
-| diplomat_coalition | 110 | 133 |
-| card_cycle_hunter | 312 | 190 |
-| aggressive_blitz | 462 | 317 |
-| australia_lock | 261 | 167 |
-| south_america_lock | 190 | 166 |
-| turtle_defensive | 24 | 187 |
+| diplomat_coalition | 197 | 231 |
+| card_cycle_hunter | 523 | 349 |
+| aggressive_blitz | 835 | 615 |
+| australia_lock | 456 | 313 |
+| south_america_lock | 422 | 375 |
+| turtle_defensive | 36 | 343 |
