@@ -30,7 +30,6 @@ Skipped (not runtime-verifiable per oracle):
 
 from __future__ import annotations
 
-import contextlib
 import pathlib
 from unittest.mock import MagicMock, patch
 
@@ -308,20 +307,20 @@ class TestBuildNegotiationCallFn:
 
         captured: dict = {}
 
-        def spy(*args, model=None, base_url=None, **kwargs):
-            captured["model"] = model or (args[2] if len(args) > 2 else None)
-            return 0
+        # The routing goes through call_ollama_for_negotiation, NOT the action-index
+        # path. Patching the wrong one let the call escape to a real Ollama server.
+        def spy(**kwargs):
+            captured.update(kwargs)
+            return None
 
-        with patch("src.agents.ollama_client.call_ollama_for_action_index", side_effect=spy):
+        with patch("src.agents.ollama_client.call_ollama_for_negotiation", side_effect=spy):
             call_fn = build_negotiation_call_fn(0, player_configs, "http://localhost:11434/v1")
-            if callable(call_fn):
-                with contextlib.suppress(Exception):
-                    call_fn()
+            assert callable(call_fn)
+            call_fn(0, "negotiate")
 
-        if captured.get("model"):
-            assert captured["model"] == expected_model, (
-                f"Expected model {expected_model!r} at player_id=0, got {captured['model']!r}"
-            )
+        assert captured["model"] == expected_model, (
+            f"Expected model {expected_model!r} at player_id=0, got {captured['model']!r}"
+        )
 
     def test_when_player_id_5_then_seat_5_model_is_expected(self, tmp_path):
         """Routing: player_id=5 must resolve to the model at the last seat."""
@@ -333,18 +332,16 @@ class TestBuildNegotiationCallFn:
 
         captured: dict = {}
 
-        def spy(*args, model=None, base_url=None, **kwargs):
-            captured["model"] = model or (args[2] if len(args) > 2 else None)
-            return 0
+        def spy(**kwargs):
+            captured.update(kwargs)
+            return None
 
-        with patch("src.agents.ollama_client.call_ollama_for_action_index", side_effect=spy):
+        with patch("src.agents.ollama_client.call_ollama_for_negotiation", side_effect=spy):
             call_fn = build_negotiation_call_fn(5, player_configs, "http://localhost:11434/v1")
-            if callable(call_fn):
-                with contextlib.suppress(Exception):
-                    call_fn()
+            assert callable(call_fn)
+            call_fn(5, "negotiate")
 
-        if captured.get("model"):
-            assert captured["model"] == expected_model
+        assert captured["model"] == expected_model
 
     def test_when_base_url_ends_with_v1_then_v1_is_stripped_before_llm_call(self, tmp_path):
         """Criterion: /v1 suffix must be stripped from base_url before calling the LLM."""
@@ -353,19 +350,17 @@ class TestBuildNegotiationCallFn:
         player_configs = self._player_configs(tmp_path)
         captured: dict = {}
 
-        def spy(*args, model=None, base_url=None, **kwargs):
-            captured["base_url"] = base_url or (args[1] if len(args) > 1 else None)
-            return 0
+        def spy(**kwargs):
+            captured.update(kwargs)
+            return None
 
-        with patch("src.agents.ollama_client.call_ollama_for_action_index", side_effect=spy):
+        with patch("src.agents.ollama_client.call_ollama_for_negotiation", side_effect=spy):
             call_fn = build_negotiation_call_fn(0, player_configs, "https://ollama.com/v1")
-            if callable(call_fn):
-                with contextlib.suppress(Exception):
-                    call_fn()
+            assert callable(call_fn)
+            call_fn(0, "negotiate")
 
-        url = captured.get("base_url", "")
-        if url:
-            assert not url.endswith("/v1"), f"Expected /v1 stripped from base_url, got {url!r}"
+        url = captured["root"]
+        assert not url.endswith("/v1"), f"Expected /v1 stripped from base_url, got {url!r}"
 
     def test_when_llm_raises_then_callable_returns_none(self, tmp_path):
         """Criterion: fallback contract — on any LLM error the callable returns None."""

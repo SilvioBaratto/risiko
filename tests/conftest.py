@@ -13,6 +13,8 @@ help assertions behave identically everywhere.
 
 import os
 
+import pytest
+
 # Force color OFF for both Rich (NO_COLOR) and Click (NO_COLOR / CLICOLOR).
 os.environ["NO_COLOR"] = "1"
 os.environ["CLICOLOR"] = "0"
@@ -47,8 +49,39 @@ _HEAVY_BC_SUBSTRINGS = (
 
 def pytest_collection_modifyitems(config, items):
     """Tag known-heavy BC dataset-generation tests as ``integration``."""
-    import pytest
-
     for item in items:
         if any(s in item.nodeid for s in _HEAVY_BC_SUBSTRINGS):
             item.add_marker(pytest.mark.integration)
+
+
+# ---------------------------------------------------------------------------
+# No unit test may reach a real Ollama server.
+#
+# Several tests patch ``call_ollama_for_action_index`` but exercise a code path
+# that also negotiates, so the negotiation call escaped to whatever Ollama is
+# listening on localhost. With rate-limit waiting enabled that call blocks for
+# as long as the server keeps the socket open — the suite hung for 15+ minutes
+# with a live connection to :11434 and no output. A developer with Ollama
+# running got a slow, network-dependent suite; CI got a fast one. Same tests.
+#
+# Every unit test now fails loudly instead of dialling out. The guard sits at the
+# transport (``httpx.post``/``httpx.get``), which is the lowest layer above the
+# socket: tests that legitimately exercise the client by mocking the transport
+# themselves simply patch over it, and tests that mean to reach a server carry the
+# ``integration`` marker and are exempt.
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _no_real_ollama(request, monkeypatch):
+    """Make any un-mocked HTTP request raise instead of blocking on the network."""
+    if request.node.get_closest_marker("integration"):
+        return
+
+    def _blocked(url, *args, **kwargs):
+        raise AssertionError(
+            f"a unit test tried to make a real HTTP request to {url!r} — mock the call "
+            "(call_ollama_for_action_index / call_ollama_for_negotiation / httpx.post), "
+            "or mark the test as integration"
+        )
+
+    monkeypatch.setattr("src.agents.ollama_client.httpx.post", _blocked, raising=True)
+    monkeypatch.setattr("src.agents.ollama_client.httpx.get", _blocked, raising=True)

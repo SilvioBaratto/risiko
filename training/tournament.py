@@ -80,6 +80,11 @@ class TournamentConfig:
     # max_turns. "none": record a draw (winner=None). True elimination victories
     # are always recorded as wins regardless of this setting.
     draw_resolution: str = "territory"
+    # Let the models deliberate before answering. Off for tournaments: picking a
+    # legal-action index needs no chain-of-thought, and thinking multiplies both
+    # latency and quota. ``visualization/trace_game.py --think`` flips it on for a
+    # single traced game, to capture the reasoning behind each move.
+    think: bool = False
 
 
 @dataclass(frozen=True)
@@ -631,6 +636,7 @@ def _play_one_game(
             timeout=0,
             http_timeout=config.action_timeout,
             rate_limit_max_wait=config.rate_limit_max_wait,
+            think=config.think,
         )
         for seat in seats
     ]

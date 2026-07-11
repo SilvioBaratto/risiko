@@ -21,6 +21,48 @@ from src.utils.log import get_logger
 
 _log = get_logger("runner")
 
+# ── Optional board tracing (for visualization / full-game replay) ────────────
+# When a sink is installed via start_board_trace(), every env step appends a
+# snapshot of the board: who owns what, how many armies, whose turn it is, and
+# the action that produced it. Mirrors the LLM call trace in
+# ``src.agents.ollama_client``. Disabled by default (sink is None) → zero
+# overhead and byte-identical behaviour. Single-game use only: snapshots are
+# recorded in the order they happen and are not thread-safe across games.
+_BOARD_TRACE: list[dict[str, Any]] | None = None
+
+
+def start_board_trace() -> list[dict[str, Any]]:
+    """Begin recording board snapshots; returns the list that will collect them."""
+    global _BOARD_TRACE
+    _BOARD_TRACE = []
+    return _BOARD_TRACE
+
+
+def stop_board_trace() -> list[dict[str, Any]] | None:
+    """Stop recording and return the collected snapshots (or None if not active)."""
+    global _BOARD_TRACE
+    trace, _BOARD_TRACE = _BOARD_TRACE, None
+    return trace
+
+
+def _record_board(entry: dict[str, Any]) -> None:
+    """Append a board snapshot if tracing is active (no-op otherwise)."""
+    if _BOARD_TRACE is not None:
+        _BOARD_TRACE.append(entry)
+
+
+def _snapshot(obs: dict[str, np.ndarray], step: int, turn: int, action: dict | None) -> dict:
+    """Build one JSON-serialisable board snapshot from an observation."""
+    return {
+        "step": step,
+        "turn": turn,
+        "current_player": int(obs["current_player"]),
+        "territory_owner": [int(v) for v in obs["territory_owner"]],
+        "armies": [int(v) for v in obs["armies"]],
+        "action": {k: int(v) for k, v in action.items()} if action else None,
+    }
+
+
 # A single player-turn expands into several env steps (trade, reinforce, one
 # step per attack, capture-move, fortify). ``max_turns`` caps *player-turns*,
 # so this backstops a pathological policy that never ends its turn from
@@ -111,6 +153,7 @@ class MultiAgentRunner:
         )
         obs, info = self._env.reset(seed=seed)
         recorder = _GameRecorder(self._env, self._n_players)
+        _record_board(_snapshot(obs, step=0, turn=0, action=None))
         step = 0
         step_ceiling = self._max_turns * _STEPS_PER_TURN_CAP
         # ``max_turns`` caps player-turns, not env steps. A turn spans several
@@ -129,6 +172,9 @@ class MultiAgentRunner:
             recorder.record_step(obs, action, reward, log_prob, value, legal)
             recorder.detect_trade(prev_trade_count, self._env.state.turns_elapsed)
             step += 1
+            _record_board(
+                _snapshot(obs, step=step, turn=self._env.state.turns_elapsed, action=action)
+            )
             if terminated or truncated:
                 _log.info(
                     "game ended early — terminated=%s truncated=%s turns=%d steps=%d",

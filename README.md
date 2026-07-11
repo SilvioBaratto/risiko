@@ -6,6 +6,96 @@ This project trains a PPO agent to discover optimal Risiko strategy purely throu
 
 ---
 
+## Results — the 100-game LLM tournament
+
+Six cloud LLMs played 100 six-player games with diplomacy (alliances, coalitions, betrayal). Six strategies were **reassigned at random to the models in every game**, so a strategy's win rate measures the strategy, not the model that happened to draw it.
+
+> The figures are labelled in Italian — they were built for a video. The code and the API are English.
+
+### Which strategy wins
+
+![Win rate per strategy](figures/vittorie_per_strategia.png)
+
+| Strategy | Win rate | 95% CI (Wilson) | Mean placement | Betrayals |
+|---|---|---|---|---|
+| Diplomacy — ally, then gang up on the leader | **27%** | 19–36% | 2.99 | 197 |
+| Card cycle — one conquest per turn, trade sets | **25%** | 17–34% | **2.66** | 523 |
+| Aggressive blitz | 19% | 13–28% | 3.26 | **835** |
+| Australia lock | 14% | 9–22% | 3.48 | 456 |
+| South America lock | 11% | 6–19% | 3.74 | 422 |
+| Turtle / defensive | 4% | 2–10% | 4.87 | 36 |
+
+Random play in a six-player game wins **16.7%**. Three results survive the confidence intervals:
+
+- **Turtling loses to the coin flip.** Fortify and wait, and you win 4% — a quarter of what you'd get by moving at random.
+- **Diplomacy and the card cycle are tied at the top**, and their intervals overlap heavily. There is no single winner in this data; there are two.
+- **The Australia advice does not hold.** Sealing the continent with the single border — the most-repeated tip in every Risk guide — wins 14%: indistinguishable from playing at random.
+
+### Betrayal does not pay
+
+![Betrayals vs win rate](figures/tradimenti_vs_vittorie.png)
+
+Aggressive blitz commits **835 betrayals** — four times the diplomat — and still finishes below it. A scatter, not a dual-axis chart: two measures on two scales would invent a relationship neither of them supports.
+
+### Winning is not the same as surviving
+
+![Mean placement](figures/piazzamento_medio.png)
+
+The card cycle **finishes higher on average** (2.66) than diplomacy (2.99) while winning fewer games. Win rate alone would have hidden that.
+
+### The map explains the temptation
+
+![The board](figures/mappa_risiko.png)
+
+Every continent trades an army bonus against the number of borders it exposes. Australia exposes exactly one — which is why everyone recommends it, and why it reads as a trap once the other five players can see you sitting in it.
+
+### Why 100 games and not twenty
+
+![Convergence](figures/convergenza.png)
+
+After twenty games diplomacy looked like a 35% strategy. After a hundred it is 27%. The lead changes hands more than once before it settles — a shorter run would have published a different answer.
+
+### The control, and its caveat
+
+![Strategy × model](figures/matrice_strategia_modello.png)
+
+Every strategy was played by every model, so a strategy cannot win merely by drawing the strongest model.
+
+<details>
+<summary>Model-vs-model win rates — published with a warning</summary>
+
+![Win rate per model](figures/vittorie_per_modello.png)
+
+**This comparison is not clean.** The tournament runs with reasoning disabled (`think=False`), which favours instruct-tuned models that answer immediately and cripples reasoning models that expect to deliberate. Read it as a sanity check on the matrix above, not as a model ranking.
+
+</details>
+
+### One game, in full
+
+![One traced game](figures/partita.gif)
+
+Every seat is named by the **strategy** it plays and wears that strategy's colour — the same hue it carries in every figure above. The panel on the right is the live standings, sorted by territories held, because "who is in front right now" is the thing the other five players are reacting to.
+
+Two moments from the traced game, straight out of `visualization/game_trace_g0.json`:
+
+**The coalition forms on turn zero.** Three of the six strategies — Defence, Cards, Diplomacy — independently declare war on the *same* player: Australia. Nobody told them to. They read the board and converged. Australia finished fifth of six.
+
+**The betrayal, verbatim.** Kimi, playing Aggressive blitz, proposed an alliance to Australia, South America and Defence — and in the same JSON response listed its attack priorities as South America, Defence, Australia. The same three. It went on to win that game.
+
+### Reproduce it
+
+Every figure is rebuilt from the committed ledger — offline, no Ollama call, no quota:
+
+```bash
+make video-assets                          # → figures/, from results/tournament/tourney300/
+python scripts/come_vincere_al_risiko.py   # the same figures, plus the Italian voice-over
+
+# Rebuild the replay from the saved trace — seconds, no game replayed
+python -m visualization.trace_game --from-trace visualization/game_trace_g0.json --gif figures/partita.gif
+```
+
+---
+
 ## Install
 
 ```bash
@@ -168,6 +258,30 @@ risiko-rl benchmark --games 50
 # Include RL checkpoint and export CSV
 risiko-rl benchmark --games 100 --rl-checkpoint models/best.pt --output baselines.csv
 ```
+
+---
+
+## Tracing one LLM game
+
+Replays a single tournament game and records everything: the exact prompt sent to each model, the raw response, the model's `thinking` trace when it emits one, the parsed move, and a board snapshot after every env step.
+
+```bash
+# Cheap sample — 20 player-turns
+python -m visualization.trace_game --max-turns 20
+
+# Full game, with the models' reasoning, replayed into a GIF
+python -m visualization.trace_game --think --gif figures/partita.gif
+
+# Redraw the replay from a trace already on disk — offline, seconds, no quota
+python -m visualization.trace_game --from-trace visualization/game_trace_g0.json --gif figures/partita.gif
+```
+
+The trace is flushed to disk every 60s while the game runs (marked `"partial": true` until it finishes), so a crash never throws away the LLM calls it already paid for. Here is a model deliberating, straight out of the JSON:
+
+> *"I am Player 0. Phase: REINFORCE. Strategy: Secure Australia first (take all 4 territories), then expand north through Indonesia. Defend the single northern chokepoint (Indonesia) aggressively."*
+> — `qwen3.5:cloud`, 51s of deliberation, before picking its reinforcement
+
+The JSON lands in `visualization/game_trace_g<index>.json` (or `--out`). This calls Ollama and **consumes quota** — `--think` multiplies both latency and cost, which is why the tournament itself runs with it off.
 
 ---
 

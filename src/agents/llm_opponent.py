@@ -36,6 +36,7 @@ class LLMOpponent(Agent):
         player_config: PlayerConfig | None = None,
         http_timeout: float | None = None,
         rate_limit_max_wait: float = 0.0,
+        think: bool = False,
     ) -> None:
         """Create an LLM opponent backed by Ollama.
 
@@ -57,12 +58,17 @@ class LLMOpponent(Agent):
             rate_limit_max_wait: Seconds to wait out HTTP 429 rate/usage limits
                 before giving up (0 = no waiting). Lets the run pause for the
                 Ollama-cloud session/weekly reset instead of playing random moves.
+            think: Let the model deliberate before answering. Off by default —
+                picking a legal-action index needs no chain-of-thought, and it
+                multiplies latency and quota. Turn it on only to capture the
+                reasoning trace (e.g. ``trace_game --think``).
         """
         self._player_config = player_config
         self._model = player_config.model if player_config else model
         self._timeout = timeout
         self._http_timeout = http_timeout if http_timeout is not None else (timeout or 120.0)
         self._rate_limit_max_wait = rate_limit_max_wait
+        self._think = think
         self._temperature = player_config.temperature if player_config else temperature
         self._top_p = player_config.top_p if player_config else top_p
         self._strategy_hint = player_config.strategy_hint if player_config else strategy_hint
@@ -198,6 +204,8 @@ class LLMOpponent(Agent):
         # byte-identical to the training path (disabled-equivalence guarantee).
         if self._rate_limit_max_wait > 0:
             kwargs["rate_limit_max_wait"] = self._rate_limit_max_wait
+        if self._think:
+            kwargs["think"] = self._think
         if diplomacy is not None:
             kwargs["diplomacy_note"] = diplomacy
         return kwargs
