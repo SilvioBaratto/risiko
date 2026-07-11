@@ -275,9 +275,11 @@ class TestReputationBookSharing:
                 books_seen.append(kwargs["reputation_book"])
             return _make_ledger_record(game_index=plan.game_index)
 
-        # Patch _play_one_game to intercept calls including reputation_book arg
+        # Patch _play_one_game to intercept calls including reputation_book arg.
+        # skip_preflight: without a play_fn, run_tournament pings the model server for
+        # real — a unit test must not depend on an Ollama being up.
         with patch.object(tm, "_play_one_game", side_effect=capturing_play):
-            run_tournament(cfg, ledger)
+            run_tournament(cfg, ledger, skip_preflight=True)
 
         if not plans_seen:
             # _play_one_game not called — different design; skip identity check

@@ -9,13 +9,13 @@ from typing import Any
 import matplotlib
 import matplotlib.axes
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 from PIL import Image
 
 from src.utils.constants import ADJACENCY, CONTINENTS, NUM_TERRITORIES, TERRITORY_NAMES
+from visualization import map_layout
 
 matplotlib.use("Agg")
 
@@ -77,6 +77,9 @@ def render_matplotlib(state: dict[str, Any]) -> Figure:
 
     Territories are nodes coloured by owner and sized by army count.
     Continent backgrounds are lightly shaded.
+
+    An optional ``turn`` key in *state* is captioned above the board — a replay
+    without it gives no sense of how far into the game a frame sits.
     """
     owner = state["territory_owner"]
     armies = state["armies"]
@@ -86,6 +89,8 @@ def render_matplotlib(state: dict[str, Any]) -> Figure:
     _draw_edges(ax, layout)
     _draw_nodes(ax, layout, owner, armies)
     _draw_legend(ax, owner)
+    if state.get("turn") is not None:
+        ax.set_title(f"Turno {int(state['turn'])}", fontsize=18, loc="left", color="#222222")
     ax.set_aspect("equal")
     ax.axis("off")
     fig.tight_layout()
@@ -133,17 +138,14 @@ class ReplayExporter:
 
 
 def _get_layout() -> dict[int, tuple[float, float]]:
-    """Return a cached spring layout for the 42-territory graph."""
+    """Return the hand-authored world-map coordinates for the 42 territories.
+
+    This used to be a ``networkx`` spring layout, which drew a force-directed blob with
+    no resemblance to the board. ``map_layout`` places each territory where it belongs.
+    """
     global _GRAPH_LAYOUT
     if _GRAPH_LAYOUT is None:
-        g = nx.Graph()
-        g.add_nodes_from(range(NUM_TERRITORIES))
-        for src, neighbors in ADJACENCY.items():
-            for dst in neighbors:
-                g.add_edge(src, dst)
-        layout = nx.spring_layout(g, seed=42, iterations=200)
-        _GRAPH_LAYOUT = {k: (float(v[0]), float(v[1])) for k, v in layout.items()}
-    assert _GRAPH_LAYOUT is not None
+        _GRAPH_LAYOUT = map_layout.get_layout()
     return _GRAPH_LAYOUT
 
 
@@ -152,13 +154,13 @@ def _draw_continent_backgrounds(
     layout: dict[int, tuple[float, float]],
 ) -> None:
     """Add lightly shaded background patches per continent."""
-    for continent, tids in CONTINENTS.items():
-        xs = [layout[tid][0] for tid in tids]
-        ys = [layout[tid][1] for tid in tids]
+    del layout  # the hull comes from map_layout, not from the caller's coordinates
+    for continent in CONTINENTS:
+        hull = map_layout.continent_hull(continent)
         color = _CONTINENT_BG.get(continent, "#ffffff")
         ax.fill(
-            xs + [sum(xs) / len(xs)],
-            ys + [sum(ys) / len(ys)],
+            [x for x, _ in hull],
+            [y for _, y in hull],
             color=color,
             alpha=0.3,
             zorder=0,
@@ -169,7 +171,11 @@ def _draw_edges(
     ax: matplotlib.axes.Axes,
     layout: dict[int, tuple[float, float]],
 ) -> None:
-    """Draw adjacency edges between territories."""
+    """Draw adjacency edges between territories.
+
+    Alaska-Kamchatka crosses the date line: on a flat map the segment would run the
+    whole width of the board, so it is dashed to read as a wrap rather than a border.
+    """
     drawn: set[tuple[int, int]] = set()
     for src, neighbors in ADJACENCY.items():
         for dst in neighbors:
@@ -179,7 +185,15 @@ def _draw_edges(
             drawn.add(edge)
             x1, y1 = layout[src]
             x2, y2 = layout[dst]
-            ax.plot([x1, x2], [y1, y2], color="#cccccc", linewidth=0.5, zorder=1)
+            wrap = edge in map_layout.WRAP_EDGES
+            ax.plot(
+                [x1, x2],
+                [y1, y2],
+                color="#cccccc",
+                linewidth=0.5,
+                linestyle="--" if wrap else "-",
+                zorder=1,
+            )
 
 
 def _draw_nodes(

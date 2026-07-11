@@ -227,3 +227,27 @@ data/bc/
 # pytest tmp_path basetemp + torch inductor cache (machine-local junk)
 pytest-of-*/
 torchinductor_*/
+
+# Video script — personal working copy, not part of the project
+script.md
+
+# ── Run artefacts ────────────────────────────────────────────────────────────
+# Detached-run logs and pidfiles: machine-local, regenerated on every run.
+logs/
+
+# Training checkpoints (4.5 GB of .pt here) — LEADING SLASH ON PURPOSE.
+# A bare "models/" matches *any* directory named models at *any* depth, so it also
+# swallows src/models/ (the Python package) and leaves it uncommitted — that is what
+# turned CI red before. Anchor it to the repo root.
+/models/
+*.pt
+
+# Ad-hoc pytest output captured to a file.
+test_output.txt
+
+# Superseded pilot/smoke tournament runs: produced by code with bugs we later fixed
+# (broken negotiation parser, winner=None, flat metrics). Their numbers are wrong —
+# keeping them next to the real run would invite someone to quote them. The published
+# run is results/tournament/tourney300/ (100 games).
+results/tournament/pilot*/
+results/tournament/smoke*/
