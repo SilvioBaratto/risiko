@@ -173,7 +173,19 @@ class NegotiationOrchestrator:
         return result
 
     def _prompt_for(self, speaker: int, obs: dict[str, Any]) -> str:
-        """Build the negotiation prompt for this speaker."""
+        """Build the negotiation prompt for this speaker.
+
+        Nobody is ever told that the leader is themselves. The action prompt has always
+        guarded this (``build_diplomacy_note``: ``leader if leader != player else None``);
+        the negotiation prompt did not, so in 1 traced negotiation out of 6 a model read
+        ``Leader (most territories): Player N`` with N being its own seat.
+
+        That is not a cosmetic slip. The coalition strategy's whole instruction is
+        "gang up on the leader" — pointed at itself, it is degenerate, and the logs show
+        exactly that: the diplomat, told it was the leader, declared war on a random
+        player and proposed no alliances at all. The aggressor, in the same spot,
+        declared war on a player and offered it an alliance in the same reply.
+        """
         allies = sorted(p for p in self._profiles if self._state.are_allied(speaker, p))
         owners = obs.get("territory_owner", [])
         leader = self._state.leader(owners) if len(owners) > 0 else None
@@ -181,7 +193,7 @@ class NegotiationOrchestrator:
             player_id=speaker,
             board=obs,
             allies=allies,
-            leader=leader,
+            leader=leader if leader != speaker else None,
             grudges={},
             max_chars=self._cfg.max_message_tokens * 5,
         )

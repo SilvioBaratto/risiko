@@ -1,9 +1,38 @@
 """Strategy catalog for Risiko RL — pure data module, no I/O or LLM calls.
 
-Defines the six research-grounded Risiko strategies, each with a board-play
-hint, a diplomatic posture, and helpers to build a ``PlayerConfig`` from a
-strategy. This is the single source of truth consumed by Cycle 8's tournament
-driver.
+Defines the six Risiko strategies, each with a board-play hint, a diplomatic posture,
+and helpers to build a ``PlayerConfig`` from a strategy. This is the single source of
+truth consumed by the tournament driver.
+
+Provenance
+----------
+These are not invented. They are the strategies human players actually advocate, taken
+from the mainstream Risk strategy literature, so the tournament measures received wisdom
+rather than a designer's guesses:
+
+* ``australia_lock`` — the single most-repeated tip in every guide: Australia is the
+  only continent defensible by fortifying one border (Indonesia/Siam).
+  https://remptongames.com/2023/01/15/the-ultimate-risk-strategy-guide-top-tips-to-win-more-at-risk/
+  https://bargames101.com/risk-strategy/
+  The same guides carry the counter-argument our data confirms: "everybody tends to try
+  to gun for that continent early, which could defeat the entire purpose", and it is
+  "easy to get trapped in Australia".
+* ``south_america_lock`` — the runner-up recommendation: four territories, two borders,
+  a bridge to both Africa and North America.
+* ``aggressive_blitz`` — eliminate the weak to take their cards and snowball.
+* ``turtle_defensive`` — the passive line. Included as a baseline to beat, not because
+  anyone recommends it.
+* ``card_cycle_hunter`` — the "technical" line. Set values escalate (4, 6, 8, 10, 12, 15,
+  then +5), and a card is drawn only if at least one territory was captured that turn, so
+  guaranteeing one conquest per turn compounds. https://en.wikipedia.org/wiki/Risk_(game)
+* ``diplomat_coalition`` — table folklore, and explicit in the guides: "when somebody is
+  clearly winning, players have a tendency to build alliances against them"; alliances
+  form around a common enemy.
+  https://remptongames.com/2023/01/15/the-ultimate-risk-strategy-guide-top-tips-to-win-more-at-risk/
+
+A caveat worth carrying: the LLMs playing these strategies were trained on this very
+literature. A result like "the Australia lock underperforms" may therefore say as much
+about what the models have *read* about Australia as about the board itself.
 """
 
 from __future__ import annotations

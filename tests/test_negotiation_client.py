@@ -69,14 +69,20 @@ def _call(**overrides):
 
 
 def _minimal_board() -> dict:
-    return {
-        "territories": {
-            "Alaska": {"owner": 0, "armies": 3},
-            "Kamchatka": {"owner": 1, "armies": 5},
-        },
-        "reinforcements_remaining": 3,
-        "trade_count": 2,
-    }
+    """A board shaped like a REAL environment observation.
+
+    This fixture used to invent a shape the environment never produces —
+    ``{"territories": {"Alaska": {...}}}`` — and the prompt renderer was written to
+    match the fixture. Both agreed with each other and neither agreed with reality:
+    the renderer's lookup missed, so the board section of every negotiation prompt
+    rendered empty in every real game, while this test went on passing.
+
+    Take the observation straight from the env so the fixture cannot drift again.
+    """
+    from src.env import RisikoEnv
+
+    obs, _ = RisikoEnv(n_players=6).reset(seed=7)
+    return dict(obs)
 
 
 # ===========================================================================
@@ -327,17 +333,57 @@ def test_when_action_index_function_inspected_then_no_diplomacy_kwargs_were_adde
 
 
 def test_when_render_called_then_output_includes_territory_information():
-    """Prompt must include board/territory information."""
+    """Prompt must include board/territory information.
+
+    Asserts on the *content*, not on the word "territory" appearing somewhere: the
+    previous version passed against a prompt whose board section was empty.
+    """
+    from src.utils.constants import TERRITORY_NAMES
+
+    board = _minimal_board()
     result = render_negotiation_prompt(
         player_id=0,
-        board=_minimal_board(),
+        board=board,
         allies=[],
         leader=None,
         grudges={},
-        max_chars=2000,
+        max_chars=4000,
     )
-    assert isinstance(result, str) and len(result) > 0
-    assert any(tok in result for tok in ("Alaska", "Kamchatka", "territories", "territory"))
+
+    # A standing line for every seat, with real counts.
+    for seat in range(6):
+        assert f"P{seat}:" in result, f"no standings line for seat {seat}"
+    # Every continent, so a negotiator can see who is close to a bonus.
+    assert "Australia:" in result and "Asia:" in result
+    # And at least one real territory this player actually holds.
+    owned = [t for t in range(42) if int(board["territory_owner"][t]) == 0]
+    assert any(TERRITORY_NAMES[t] in result for t in owned)
+
+
+def test_when_budget_is_tight_then_diplomacy_survives_and_the_board_is_trimmed():
+    """The char cap must never cost the model its allies or the leader.
+
+    The board summary is long and the budget is small (max_message_tokens * 5). A naive
+    "join everything, then slice" drops whatever sits last — which silently truncated the
+    Diplomacy block mid-word, leaving the models able to see the board but not who they
+    were allied with. Diplomacy is reserved; the board sheds whole lines instead.
+    """
+    result = render_negotiation_prompt(
+        player_id=0,
+        board=_minimal_board(),
+        allies=[2, 4],
+        leader=3,
+        grudges={},
+        max_chars=400,  # deliberately too small for board + diplomacy together
+    )
+
+    assert "Allies: [2, 4]" in result
+    assert "Leader (most territories): Player 3" in result
+    assert len(result) <= 400
+    # And nothing is cut mid-line: every board row is whole.
+    for line in result.split("\n"):
+        if line.strip().startswith("P") and "territories" in line:
+            assert "armies" in line, f"board row truncated mid-line: {line!r}"
 
 
 def test_when_render_called_with_allies_then_output_references_ally():

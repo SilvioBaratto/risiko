@@ -251,3 +251,11 @@ test_output.txt
 # run is results/tournament/tourney300/ (100 games).
 results/tournament/pilot*/
 results/tournament/smoke*/
+
+# Aborted tournament runs, kept on disk for reference but never published: their
+# numbers come from code with a bug we have since fixed.
+results/tournament/*ABORTED*/
+
+# One-off diagnostic traces (the A/B that exposed the self-leader bug). The finding
+# lives in tests/test_seat_confound.py; the raw dumps are 700 KB each.
+visualization/game_trace_fixed*.json

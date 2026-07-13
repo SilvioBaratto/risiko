@@ -89,11 +89,18 @@ class TournamentConfig:
 
 @dataclass(frozen=True)
 class GamePlan:
-    """Per-game execution plan derived from TournamentConfig."""
+    """Per-game execution plan derived from TournamentConfig.
+
+    ``seat_order`` is the strategies permuted onto the six seats for this game. It
+    exists because the tournament used to permute only the *models*, leaving each
+    strategy nailed to a fixed seat for all 100 games — so "win rate by strategy" and
+    "win rate by seat" were the same number, and the two could not be told apart.
+    """
 
     game_index: int
     seed: int
     assignment: dict[str, str]
+    seat_order: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -281,7 +288,27 @@ def build_game_plan(config: TournamentConfig, game_index: int) -> GamePlan:
     assignment = assign_strategies_to_models(
         list(config.strategies), list(config.models), seed=per_game_seed
     )
-    return GamePlan(game_index=game_index, seed=per_game_seed, assignment=assignment)
+    seat_order = assign_strategies_to_seats(list(config.strategies), seed=per_game_seed)
+    return GamePlan(
+        game_index=game_index,
+        seed=per_game_seed,
+        assignment=assignment,
+        seat_order=seat_order,
+    )
+
+
+def assign_strategies_to_seats(strategies: Sequence[str], *, seed: int) -> tuple[str, ...]:
+    """Return the strategies permuted onto seats for one game.
+
+    Seat position is not free: turn order differs, and the negotiation prompt names a
+    board leader that the models act on. Pinning a strategy to a seat therefore
+    confounds the two. Deriving the permutation from a *different* RNG stream than the
+    model assignment keeps the two permutations independent — otherwise a strategy that
+    lands on seat 0 would also always draw the same model.
+    """
+    rng = np.random.default_rng(seed + 1_000_003)  # a prime offset: distinct stream
+    perm = rng.permutation(len(strategies))
+    return tuple(strategies[i] for i in perm)
 
 
 # ---------------------------------------------------------------------------
@@ -471,14 +498,22 @@ class _DiplomacyWiring:
 def build_seats(
     assignment: dict[str, str],
     config: TournamentConfig,
+    seat_order: Sequence[str] | None = None,
 ) -> list[PlayerConfig]:
-    """Return one PlayerConfig per slot, in strategy-list order.
+    """Return one PlayerConfig per seat.
 
-    ``assignment`` is a bijection {strategy_slug: model}.  Slot *i* receives
-    the model for ``config.strategies[i]``.  The ``strategy_hint`` and posture
-    levers (trust_propensity, vengefulness) come from the strategy catalog via
-    ``to_player_config``.
+    Args:
+        assignment: Bijection {strategy_slug: model}.
+        config: The tournament config (sampling params, and the default seat order).
+        seat_order: Strategies in seat order for this game. Defaults to
+            ``config.strategies`` — which is what the tournament used to do for every
+            game, pinning each strategy to one seat and confounding strategy with seat
+            position. The tournament now passes ``plan.seat_order``.
+
+    Returns:
+        One ``PlayerConfig`` per seat, in seat order.
     """
+    order = list(seat_order) if seat_order else list(config.strategies)
     return [
         to_player_config(
             get_strategy(strategy),
@@ -487,7 +522,7 @@ def build_seats(
             top_p=config.top_p,
             model=assignment[strategy],
         )
-        for i, strategy in enumerate(config.strategies)
+        for i, strategy in enumerate(order)
     ]
 
 
@@ -626,7 +661,7 @@ def _play_one_game(
     ensure_env_loaded()
     base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
-    seats = build_seats(plan.assignment, config)
+    seats = build_seats(plan.assignment, config, seat_order=plan.seat_order)
     # timeout=0 disables the hard wall-clock cap so a call waiting out a 429
     # rate/usage limit is never aborted into a random move; http_timeout bounds
     # each individual HTTP attempt, and rate_limit_max_wait governs the wait.
@@ -687,12 +722,16 @@ def _play_one_game(
             resolution = "territory_cap"
 
     winner_strategy: str | None = None
+    # The seat order is per-game now: read the winner's strategy off the seats that
+    # actually played, never off the static config list.
+    order = list(plan.seat_order) if plan.seat_order else list(config.strategies)
+
     winner_model: str | None = None
     if winner is not None:
-        winner_strategy = list(config.strategies)[winner]
+        winner_strategy = order[winner]
         winner_model = plan.assignment.get(winner_strategy)
 
-    seat_strategies = {str(i): list(config.strategies)[i] for i in range(_N_PLAYERS)}
+    seat_strategies = {str(i): order[i] for i in range(_N_PLAYERS)}
     seat_models = {str(i): seats[i].model for i in range(_N_PLAYERS)}
 
     final_ranking = _final_ranking(env.state, result.elimination_order)
