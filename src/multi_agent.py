@@ -472,5 +472,6 @@ class DiplomacyRunner(MultiAgentRunner):
         territory_owner = obs.get("territory_owner", np.array([], dtype=np.int32))
         leader: int | None = None
         if len(territory_owner) > 0:
-            leader = int(self._state.leader(territory_owner))
+            # None when the board is tied — there is no leader to gang up on.
+            leader = self._state.leader(territory_owner)
         return DiplomacyContext(state=self._state, acting_player=player, leader=leader)

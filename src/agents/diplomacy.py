@@ -121,9 +121,22 @@ class DiplomacyState:
         raw = _BASE_TRUST + bonus - self.grudge_score(a, b, now)
         return max(0.0, min(1.0, raw))
 
-    def leader(self, territory_owner: Sequence[int]) -> int:
-        """Player with the most territories; lowest id breaks ties deterministically."""
+    def leader(self, territory_owner: Sequence[int]) -> int | None:
+        """Player with the most territories, or ``None`` when nobody is ahead.
+
+        A tie used to be broken by lowest player id. That looks harmless and is not:
+        the prompt announces the result as ``Leader (most territories): Player N``, and
+        the models act on that line. At turn 0 every player holds an equal share, so the
+        tie-break crowned **seat 0** in every single game — and the other seats duly
+        declared war on it. Measured on an identical board, adding that line moved the
+        share of turn-0 war declarations aimed at seat 0 from 1-in-6 to 4-in-6.
+
+        A tie means there is no leader. Say so, and let the models read the board.
+        """
         counts = np.bincount(territory_owner)
+        top = int(counts.max())
+        if int((counts == top).sum()) > 1:
+            return None
         return int(np.argmax(counts))
 
 

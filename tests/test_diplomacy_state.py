@@ -149,17 +149,28 @@ def test_when_grudge_score_evaluated_at_same_turn_as_attack_no_decay_applied():
 
 
 # ---------------------------------------------------------------------------
-# Criterion: leader() breaks ties by lowest player id;
+# Criterion: leader() names a leader only when there is one;
 #            trust() is monotonic in grudge score
 # ---------------------------------------------------------------------------
 
 
-def test_when_players_tied_in_territories_then_leader_returns_lowest_player_id():
-    """Tie broken by lowest player id (deterministic)."""
+def test_when_players_tied_in_territories_then_there_is_no_leader():
+    """A tie has no leader.
+
+    This used to break ties by lowest player id "for determinism". Determinism was
+    never the problem — the problem is that the result is announced to the models as
+    ``Leader (most territories): Player N`` and they act on it. Every game starts with
+    every player on an equal share, so the tie-break crowned seat 0 in every single
+    game and the table duly ganged up on it. Returning None is just as deterministic
+    and does not invent a fact.
+
+    (Resolving a *drawn game* still needs a winner; that is ``_territory_leader`` in
+    training/tournament.py, which keeps its tie-break.)
+    """
     # Players 0 and 1 each own 3 territories out of 6.
     territory_owner = [0, 1, 0, 1, 0, 1]
     state = _make_state()
-    assert state.leader(territory_owner) == 0
+    assert state.leader(territory_owner) is None
 
 
 def test_when_one_player_dominates_then_leader_returns_dominant_player():
@@ -174,11 +185,11 @@ def test_when_single_player_owns_all_then_leader_is_that_player():
     assert state.leader(territory_owner) == 5
 
 
-def test_when_three_way_tie_then_leader_is_lowest_id():
-    """With three players tied, the lowest id (0) is returned."""
+def test_when_three_way_tie_then_there_is_still_no_leader():
+    """Any tie at the top means nobody is ahead — not even a three-way one."""
     territory_owner = [0, 1, 2, 0, 1, 2]  # 2 territories each
     state = _make_state()
-    assert state.leader(territory_owner) == 0
+    assert state.leader(territory_owner) is None
 
 
 def test_when_no_attack_history_then_trust_is_nonnegative():
